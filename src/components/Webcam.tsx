@@ -4,9 +4,11 @@ import type { HandLandmarks } from '../hooks/useMediaPipeHands';
 
 interface WebcamProps {
   onLandmarks: (landmarks: HandLandmarks) => void;
+  width?: number;
+  height?: number;
 }
 
-export function Webcam({ onLandmarks }: WebcamProps) {
+export function Webcam({ onLandmarks, width = 480, height = 360 }: WebcamProps) {
   const { videoRef, landmarks, isReady, startCamera, stopCamera } = useMediaPipeHands();
   const startedRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -65,7 +67,7 @@ export function Webcam({ onLandmarks }: WebcamProps) {
   }, [isReady, startCamera, stopCamera]);
 
   return (
-    <div style={{ position: 'relative', width: 640, height: 480, borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+    <div style={{ position: 'relative', width, height, borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.4)', background: '#020617' }}>
       <video
         ref={videoRef}
         autoPlay
@@ -80,8 +82,8 @@ export function Webcam({ onLandmarks }: WebcamProps) {
       />
       <canvas
         ref={canvasRef}
-        width={640}
-        height={480}
+        width={width}
+        height={height}
         style={{
           position: 'absolute',
           top: 0,

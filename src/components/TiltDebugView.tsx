@@ -31,7 +31,7 @@ export const TiltDebugView: React.FC<TiltDebugStateProps> = ({ state, onResetCal
         background: '#1e293b',
         color: '#f8fafc',
         borderRadius: '12px',
-        width: '640px',
+        width: '480px',
         boxSizing: 'border-box',
         fontFamily: 'monospace',
       }}

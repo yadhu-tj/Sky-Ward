@@ -1,9 +1,11 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Webcam } from './components/Webcam';
 import type { HandLandmarks } from './hooks/useMediaPipeHands';
 import { TiltPipeline, DEFAULT_TILT_CONFIG } from './input/tiltController';
 import type { TiltDebugState } from './input/tiltController';
 import { TiltDebugView } from './components/TiltDebugView';
+import { GameEngine } from './game/GameEngine';
+import { GameCanvas } from './game/GameCanvas';
 import './App.css';
 
 const INITIAL_DEBUG_STATE: TiltDebugState = {
@@ -24,7 +26,33 @@ const INITIAL_DEBUG_STATE: TiltDebugState = {
 
 function App() {
   const pipelineRef = useRef<TiltPipeline>(new TiltPipeline(DEFAULT_TILT_CONFIG));
+  const engineRef = useRef<GameEngine>(new GameEngine());
   const [debugState, setDebugState] = useState<TiltDebugState>(INITIAL_DEBUG_STATE);
+  const [keyboardAngleRad, setKeyboardAngleRad] = useState<number | null>(null);
+
+  // Keyboard debug fallback (ArrowLeft / ArrowRight)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        setKeyboardAngleRad(-0.28); // ~-16 deg
+      } else if (e.key === 'ArrowRight') {
+        setKeyboardAngleRad(0.28); // ~+16 deg
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        setKeyboardAngleRad(0);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   const handleLandmarks = useCallback((landmarks: HandLandmarks) => {
     const nextState = pipelineRef.current.process(landmarks);
@@ -35,16 +63,82 @@ function App() {
     pipelineRef.current.resetCalibration();
   }, []);
 
+  const handleStartGame = useCallback(() => {
+    engineRef.current.startGame();
+  }, []);
+
+  const handleRestart = useCallback(() => {
+    engineRef.current.startGame();
+  }, []);
+
+  // Use keyboard tilt if active, otherwise use hand tilt pipeline
+  const activeTiltRad = keyboardAngleRad !== null && keyboardAngleRad !== 0
+    ? keyboardAngleRad
+    : debugState.finalAngleRad;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem', padding: '1.5rem', minHeight: '100vh', background: '#0b0f19', color: '#f8fafc' }}>
-      <header style={{ textAlign: 'center' }}>
-        <h1 style={{ margin: '0 0 0.25rem 0', fontSize: '2rem', letterSpacing: '1px' }}>Skyward Roll</h1>
-        <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.95rem' }}>Motion-Controlled Arcade Platformer (Phase 1: Tilt Pipeline)</p>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        padding: '1.25rem 2rem',
+        minHeight: '100vh',
+        background: '#070b14',
+        color: '#f8fafc',
+        boxSizing: 'border-box',
+      }}
+    >
+      <header style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+        <h1 style={{ margin: '0 0 0.25rem 0', fontSize: '2.2rem', letterSpacing: '1.5px', color: '#38bdf8' }}>
+          SKYWARD ROLL
+        </h1>
+        <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.95rem' }}>
+          Motion-Controlled Arcade Platformer · Hand Tilt & Gravity Projection
+        </p>
       </header>
-      
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', alignItems: 'center' }}>
-        <Webcam onLandmarks={handleLandmarks} />
-        <TiltDebugView state={debugState} onResetCalibration={handleResetCalibration} />
+
+      {/* Main Container: Game on left, Camera & Debug on right */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          gap: '1.5rem',
+          alignItems: 'flex-start',
+          justifyContent: 'center',
+          flexWrap: 'wrap',
+          maxWidth: '1240px',
+          width: '100%',
+        }}
+      >
+        {/* Playfield Canvas */}
+        <GameCanvas
+          engine={engineRef.current}
+          tiltAngleRad={activeTiltRad}
+          isCalibrated={debugState.isCalibrated}
+          onStartGame={handleStartGame}
+          onRestart={handleRestart}
+        />
+
+        {/* Right Panel: Camera & Tilt Debugger */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '480px' }}>
+          <Webcam onLandmarks={handleLandmarks} width={480} height={320} />
+          <TiltDebugView state={debugState} onResetCalibration={handleResetCalibration} />
+
+          <div
+            style={{
+              padding: '10px 14px',
+              background: '#0f172a',
+              borderRadius: '8px',
+              border: '1px solid #1e293b',
+              fontSize: '0.8rem',
+              color: '#64748b',
+              textAlign: 'center',
+            }}
+          >
+            Keyboard Debug: Hold <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#e2e8f0' }}>←</kbd> or <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#e2e8f0' }}>→</kbd> to test tilt manually without camera.
+          </div>
+        </div>
       </div>
     </div>
   );
