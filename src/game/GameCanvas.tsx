@@ -290,6 +290,60 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         ctx.fillText('PORTAL WARP! +7m', width / 2, height / 2 - 50);
       }
 
+      // 3-Second Ready Countdown Overlay on Playfield
+      if (engine.state === 'COUNTDOWN') {
+        const remaining = engine.countdownTimer;
+        const count = Math.ceil(remaining);
+        const progress = Math.min(1, remaining / 3.0); // 1.0 down to 0.0
+
+        // Soft frosted backdrop
+        ctx.fillStyle = 'rgba(7, 11, 20, 0.55)';
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.save();
+        ctx.translate(width / 2, height / 2 - 30);
+
+        // Circular background track
+        ctx.beginPath();
+        ctx.arc(0, 0, 64, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+        ctx.lineWidth = 8;
+        ctx.stroke();
+
+        // Glowing progress arc
+        ctx.beginPath();
+        ctx.arc(0, 0, 64, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+        const arcColor = count <= 1 ? '#10b981' : count === 2 ? '#38bdf8' : '#f59e0b';
+        ctx.strokeStyle = arcColor;
+        ctx.shadowColor = arcColor;
+        ctx.shadowBlur = 18;
+        ctx.lineWidth = 8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Big animated number or GO!
+        ctx.fillStyle = '#ffffff';
+        ctx.font = count > 0 ? 'bold 60px monospace' : 'bold 46px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(count > 0 ? `${count}` : 'GO!', 0, 0);
+
+        ctx.restore();
+
+        // Guidance banner below countdown
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        const guidance =
+          count === 3
+            ? 'Place hands at comfortable chest height'
+            : count === 2
+            ? 'Calibrating your hand posture...'
+            : 'Get ready to climb!';
+        ctx.fillText(guidance, width / 2, height / 2 + 55);
+      }
+
       animationFrameId = requestAnimationFrame(render);
     };
 
@@ -400,7 +454,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       </div>
 
       {/* Start / Ready Overlay */}
-      {gameState !== 'PLAYING' && gameState !== 'PAUSED' && gameState !== 'GAME_OVER' && (
+      {gameState !== 'PLAYING' &&
+        gameState !== 'COUNTDOWN' &&
+        gameState !== 'PAUSED' &&
+        gameState !== 'GAME_OVER' && (
         <div
           style={{
             position: 'absolute',

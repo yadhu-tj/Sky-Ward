@@ -99,13 +99,14 @@ function App() {
   }, []);
 
   const handleStartGame = useCallback(() => {
-    pipelineRef.current.lockoutPauseGesture(80); // 2.7s lockout so reaching for keyboard/mouse won't pause
+    pipelineRef.current.resetCalibration(); // Calibrate fresh during 3-second countdown!
+    pipelineRef.current.lockoutPauseGesture(130); // ~4.3s lockout covering countdown + early climb
     engineRef.current.startGame();
   }, []);
 
   const handleSkipCalibrationAndStart = useCallback(() => {
     pipelineRef.current.skipCalibration();
-    pipelineRef.current.lockoutPauseGesture(80);
+    pipelineRef.current.lockoutPauseGesture(130);
     setDebugState((prev) => ({
       ...prev,
       isCalibrated: true,
@@ -117,7 +118,8 @@ function App() {
   }, []);
 
   const handleRestart = useCallback(() => {
-    pipelineRef.current.lockoutPauseGesture(80);
+    pipelineRef.current.resetCalibration(); // Calibrate fresh during 3-second countdown!
+    pipelineRef.current.lockoutPauseGesture(130);
     engineRef.current.startGame();
   }, []);
 

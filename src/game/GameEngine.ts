@@ -3,7 +3,7 @@ import type { ChunkRow } from './levelGenerator';
 import { updateBallPhysics, DEFAULT_PHYSICS_CONFIG } from './physics';
 import type { Ball, Bar, PhysicsConfig } from './physics';
 
-export type GameState = 'CALIBRATING' | 'READY' | 'PLAYING' | 'PAUSED' | 'GAME_OVER';
+export type GameState = 'CALIBRATING' | 'READY' | 'COUNTDOWN' | 'PLAYING' | 'PAUSED' | 'GAME_OVER';
 
 export type DeathReason = 'HOLE_FALL' | 'RISING_FLOOR' | null;
 
@@ -15,6 +15,8 @@ export interface GameStats {
   timeElapsed: number;
   shieldTimer: number;
   isShieldActive: boolean;
+  countdownTimer: number;
+  countdownSeconds: number;
 }
 
 export interface GameEngineConfig {
@@ -56,6 +58,7 @@ export class GameEngine {
   public timeElapsed: number = 0;
   public portalWarpAnimation: number = 0;
   public shieldTimer: number = 0; // Invulnerability countdown
+  public countdownTimer: number = 0; // 3-second countdown on start/restart
 
   private generator: LevelGenerator;
   private config: GameEngineConfig;
@@ -119,7 +122,8 @@ export class GameEngine {
 
   public startGame(): void {
     this.reset();
-    this.state = 'PLAYING';
+    this.state = 'COUNTDOWN';
+    this.countdownTimer = 3.2; // 3 seconds plus brief "GO!"
   }
 
   public pause(): void {
@@ -147,14 +151,28 @@ export class GameEngine {
   }
 
   public update(dt: number): void {
-    if (this.state !== 'PLAYING') {
-      return;
-    }
-
-    // Smooth mechanical angular interpolation (rotational damping)
+    // Smooth mechanical angular interpolation runs continuously so bar reflects hand tilt
     const angleDiff = this.bar.targetAngleRad - this.bar.angleRad;
     const tiltLerpSpeed = 15; // Smooth mechanical responsiveness
     this.bar.angleRad += angleDiff * Math.min(1, tiltLerpSpeed * dt);
+
+    // Handle 3-second countdown before climb starts
+    if (this.state === 'COUNTDOWN') {
+      this.countdownTimer = Math.max(0, this.countdownTimer - dt);
+      // Keep ball centered at rest during countdown
+      this.ball.x = this.config.barWidth / 2;
+      this.ball.velocity = 0;
+
+      if (this.countdownTimer <= 0) {
+        this.countdownTimer = 0;
+        this.state = 'PLAYING';
+      }
+      return;
+    }
+
+    if (this.state !== 'PLAYING') {
+      return;
+    }
 
     this.timeElapsed += dt;
 
@@ -296,6 +314,8 @@ export class GameEngine {
       timeElapsed: Math.floor(this.timeElapsed),
       shieldTimer: this.shieldTimer,
       isShieldActive: this.shieldTimer > 0,
+      countdownTimer: this.countdownTimer,
+      countdownSeconds: Math.ceil(this.countdownTimer),
     };
   }
 
