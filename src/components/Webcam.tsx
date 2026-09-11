@@ -3,20 +3,44 @@ import { useMediaPipeHands } from '../hooks/useMediaPipeHands';
 import type { HandLandmarks } from '../hooks/useMediaPipeHands';
 
 interface WebcamProps {
-  onLandmarks: (landmarks: HandLandmarks) => void;
+  onLandmarks: (landmarks: HandLandmarks, isOpenPalm: boolean) => void;
   width?: number;
   height?: number;
 }
 
-export function Webcam({ onLandmarks, width = 480, height = 360 }: WebcamProps) {
-  const { videoRef, landmarks, isReady, startCamera, stopCamera } = useMediaPipeHands();
-  const startedRef = useRef(false);
+export function Webcam({ onLandmarks, width = 480, height = 320 }: WebcamProps) {
+  const {
+    videoRef,
+    landmarks,
+    isOpenPalm,
+    isReady,
+    cameraActive,
+    cameraError,
+    startCamera,
+    stopCamera,
+  } = useMediaPipeHands();
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Auto-start camera when MediaPipe is ready
   useEffect(() => {
-    onLandmarks(landmarks);
+    if (isReady && !cameraActive && !cameraError) {
+      startCamera();
+    }
+  }, [isReady, cameraActive, cameraError, startCamera]);
 
-    // Draw landmarks and connector bar onto canvas
+  // Clean shutdown on actual unmount
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, [stopCamera]);
+
+  // Forward landmarks and palm gesture to parent
+  useEffect(() => {
+    onLandmarks(landmarks, isOpenPalm);
+
+    // Draw visual feedback overlay on canvas
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -36,7 +60,7 @@ export function Webcam({ onLandmarks, width = 480, height = 360 }: WebcamProps) 
     };
 
     if (landmarks.left) {
-      drawHand(landmarks.left, '#3b82f6');
+      drawHand(landmarks.left, '#38bdf8');
     }
     if (landmarks.right) {
       drawHand(landmarks.right, '#10b981');
@@ -56,18 +80,45 @@ export function Webcam({ onLandmarks, width = 480, height = 360 }: WebcamProps) 
       ctx.stroke();
       ctx.setLineDash([]);
     }
-  }, [landmarks, onLandmarks]);
 
-  useEffect(() => {
-    if (isReady && !startedRef.current) {
-      startedRef.current = true;
-      startCamera();
+    // Open Palm Pause Indicator badge on video
+    if (isOpenPalm) {
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.85)';
+      ctx.beginPath();
+      ctx.roundRect(canvas.width / 2 - 80, 12, 160, 32, 8);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('✋ PAUSE GESTURE', canvas.width / 2, 32);
+    } else if (!landmarks.left || !landmarks.right) {
+      // Gentle helper
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
+      ctx.beginPath();
+      ctx.roundRect(canvas.width / 2 - 110, canvas.height - 36, 220, 26, 6);
+      ctx.fill();
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Show both hands in frame to steer', canvas.width / 2, canvas.height - 19);
     }
-    return () => stopCamera();
-  }, [isReady, startCamera, stopCamera]);
+  }, [landmarks, isOpenPalm, onLandmarks]);
 
   return (
-    <div style={{ position: 'relative', width, height, borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.4)', background: '#020617' }}>
+    <div
+      style={{
+        position: 'relative',
+        width,
+        height,
+        borderRadius: '12px',
+        overflow: 'hidden',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+        background: '#020617',
+        border: '1px solid #1e293b',
+      }}
+    >
       <video
         ref={videoRef}
         autoPlay
@@ -78,6 +129,7 @@ export function Webcam({ onLandmarks, width = 480, height = 360 }: WebcamProps) 
           height: '100%',
           transform: 'scaleX(-1)',
           objectFit: 'cover',
+          display: cameraActive ? 'block' : 'none',
         }}
       />
       <canvas
@@ -93,6 +145,65 @@ export function Webcam({ onLandmarks, width = 480, height = 360 }: WebcamProps) 
           pointerEvents: 'none',
         }}
       />
+
+      {/* Camera loading state */}
+      {!cameraActive && !cameraError && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#94a3b8',
+            fontSize: '0.9rem',
+            gap: '8px',
+            background: '#0b0f19',
+          }}
+        >
+          <div style={{ fontSize: '1.8rem' }}>📷</div>
+          <div>Starting Camera...</div>
+          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Please allow browser camera permission</div>
+        </div>
+      )}
+
+      {/* Camera Error state */}
+      {cameraError && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fca5a5',
+            padding: '16px',
+            textAlign: 'center',
+            fontSize: '0.85rem',
+            gap: '10px',
+            background: 'rgba(15, 23, 42, 0.95)',
+          }}
+        >
+          <div style={{ fontSize: '1.8rem' }}>⚠️</div>
+          <div>{cameraError}</div>
+          <button
+            onClick={startCamera}
+            style={{
+              background: '#ef4444',
+              color: '#fff',
+              border: 'none',
+              padding: '6px 14px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+            }}
+          >
+            Retry Camera
+          </button>
+        </div>
+      )}
     </div>
   );
 }

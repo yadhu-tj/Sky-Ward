@@ -22,6 +22,8 @@ const INITIAL_DEBUG_STATE: TiltDebugState = {
   calibrationProgress: 0,
   isCalibrated: false,
   neutralOffsetDeg: 0,
+  isOpenPalm: false,
+  palmPauseTriggered: false,
 };
 
 function App() {
@@ -30,13 +32,16 @@ function App() {
   const [debugState, setDebugState] = useState<TiltDebugState>(INITIAL_DEBUG_STATE);
   const [keyboardAngleRad, setKeyboardAngleRad] = useState<number | null>(null);
 
-  // Keyboard debug fallback (ArrowLeft / ArrowRight)
+  // Keyboard controls (Arrow keys for tilt, Space/P for pause)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') {
         setKeyboardAngleRad(-0.28); // ~-16 deg
       } else if (e.key === 'ArrowRight') {
         setKeyboardAngleRad(0.28); // ~+16 deg
+      } else if (e.code === 'Space' || e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        engineRef.current.togglePause();
       }
     };
 
@@ -54,16 +59,44 @@ function App() {
     };
   }, []);
 
-  const handleLandmarks = useCallback((landmarks: HandLandmarks) => {
-    const nextState = pipelineRef.current.process(landmarks);
+  const handleLandmarks = useCallback((landmarks: HandLandmarks, isOpenPalm: boolean) => {
+    const nextState = pipelineRef.current.process(landmarks, isOpenPalm);
     setDebugState(nextState);
+
+    // If open palm gesture was held to trigger pause
+    if (nextState.palmPauseTriggered) {
+      engineRef.current.togglePause();
+    }
   }, []);
 
   const handleResetCalibration = useCallback(() => {
     pipelineRef.current.resetCalibration();
   }, []);
 
+  const handleSkipCalibration = useCallback(() => {
+    pipelineRef.current.skipCalibration();
+    setDebugState((prev) => ({
+      ...prev,
+      isCalibrated: true,
+      isCalibrating: false,
+      calibrationProgress: 1,
+      neutralOffsetDeg: 0,
+    }));
+  }, []);
+
   const handleStartGame = useCallback(() => {
+    engineRef.current.startGame();
+  }, []);
+
+  const handleSkipCalibrationAndStart = useCallback(() => {
+    pipelineRef.current.skipCalibration();
+    setDebugState((prev) => ({
+      ...prev,
+      isCalibrated: true,
+      isCalibrating: false,
+      calibrationProgress: 1,
+      neutralOffsetDeg: 0,
+    }));
     engineRef.current.startGame();
   }, []);
 
@@ -71,10 +104,15 @@ function App() {
     engineRef.current.startGame();
   }, []);
 
+  const handleTogglePause = useCallback(() => {
+    engineRef.current.togglePause();
+  }, []);
+
   // Use keyboard tilt if active, otherwise use hand tilt pipeline
-  const activeTiltRad = keyboardAngleRad !== null && keyboardAngleRad !== 0
-    ? keyboardAngleRad
-    : debugState.finalAngleRad;
+  const activeTiltRad =
+    keyboardAngleRad !== null && keyboardAngleRad !== 0
+      ? keyboardAngleRad
+      : debugState.finalAngleRad;
 
   return (
     <div
@@ -90,7 +128,14 @@ function App() {
       }}
     >
       <header style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-        <h1 style={{ margin: '0 0 0.25rem 0', fontSize: '2.2rem', letterSpacing: '1.5px', color: '#38bdf8' }}>
+        <h1
+          style={{
+            margin: '0 0 0.25rem 0',
+            fontSize: '2.2rem',
+            letterSpacing: '1.5px',
+            color: '#38bdf8',
+          }}
+        >
           SKYWARD ROLL
         </h1>
         <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.95rem' }}>
@@ -117,13 +162,19 @@ function App() {
           tiltAngleRad={activeTiltRad}
           isCalibrated={debugState.isCalibrated}
           onStartGame={handleStartGame}
+          onSkipCalibrationAndStart={handleSkipCalibrationAndStart}
           onRestart={handleRestart}
+          onTogglePause={handleTogglePause}
         />
 
         {/* Right Panel: Camera & Tilt Debugger */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '480px' }}>
           <Webcam onLandmarks={handleLandmarks} width={480} height={320} />
-          <TiltDebugView state={debugState} onResetCalibration={handleResetCalibration} />
+          <TiltDebugView
+            state={debugState}
+            onResetCalibration={handleResetCalibration}
+            onSkipCalibration={handleSkipCalibration}
+          />
 
           <div
             style={{
@@ -134,9 +185,15 @@ function App() {
               fontSize: '0.8rem',
               color: '#64748b',
               textAlign: 'center',
+              lineHeight: 1.5,
             }}
           >
-            Keyboard Debug: Hold <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#e2e8f0' }}>←</kbd> or <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#e2e8f0' }}>→</kbd> to test tilt manually without camera.
+            <div>
+              Controls: Tilt hands or hold <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#e2e8f0' }}>←</kbd> / <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#e2e8f0' }}>→</kbd> to steer.
+            </div>
+            <div style={{ marginTop: '4px' }}>
+              Pause: Hold open palm ✋ in front of camera, or press <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#e2e8f0' }}>Space</kbd>.
+            </div>
           </div>
         </div>
       </div>

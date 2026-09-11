@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Hands } from '@mediapipe/hands';
 import type { Results } from '@mediapipe/hands';
-import { Camera } from '@mediapipe/camera_utils';
 
 export interface Landmark {
   x: number;
@@ -14,94 +13,213 @@ export interface HandLandmarks {
   right: Landmark[] | null;
 }
 
+/**
+ * Detects whether a set of hand landmarks represents an upright open palm facing the camera.
+ */
+export function isHandOpenPalm(hand: Landmark[] | null): boolean {
+  if (!hand || hand.length < 21) return false;
+
+  const wrist = hand[0];
+  const middleMcp = hand[9];
+
+  // Euclidean distance in 2D
+  const dist = (p1: Landmark, p2: Landmark) =>
+    Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+  // Hand must have significant scale in the frame (prominently shown to camera)
+  const palmScale = dist(wrist, middleMcp);
+  if (palmScale < 0.12) return false;
+
+  const fingerIndices = [
+    { mcp: 5, tip: 8 },   // Index
+    { mcp: 9, tip: 12 },  // Middle
+    { mcp: 13, tip: 16 }, // Ring
+    { mcp: 17, tip: 20 }, // Pinky
+  ];
+
+  for (const { mcp, tip } of fingerIndices) {
+    const mcpPt = hand[mcp];
+    const tipPt = hand[tip];
+
+    // In screen coordinates (y=0 top), fingertip must be higher than MCP joint
+    if (tipPt.y >= mcpPt.y) {
+      return false;
+    }
+
+    // Extended finger: distance from wrist to tip must be significantly larger than wrist to MCP
+    const distMcp = dist(wrist, mcpPt);
+    const distTip = dist(wrist, tipPt);
+    if (distTip < distMcp * 1.35) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function useMediaPipeHands() {
   const [landmarks, setLandmarks] = useState<HandLandmarks>({ left: null, right: null });
+  const [isOpenPalm, setIsOpenPalm] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
   const handsRef = useRef<Hands | null>(null);
-  const cameraRef = useRef<Camera | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const animFrameIdRef = useRef<number | null>(null);
+  const isProcessingRef = useRef(false);
+  const isMountedRef = useRef(true);
 
+  // Initialize MediaPipe Hands model once
   useEffect(() => {
-    const hands = new Hands({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
-    });
+    isMountedRef.current = true;
 
-    hands.setOptions({
-      maxNumHands: 2,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.7,
-      minTrackingConfidence: 0.7,
-    });
-
-    hands.onResults((results: Results) => {
-      const detected = results.multiHandLandmarks ?? [];
-      
-      let left: Landmark[] | null = null;
-      let right: Landmark[] | null = null;
-
-      if (detected.length === 1) {
-        // If single hand, map coordinates mirroring x (for selfie perspective)
-        const mapped = detected[0].map((lm) => ({ x: 1 - lm.x, y: lm.y, z: lm.z }));
-        const wristX = mapped[0].x;
-        if (wristX < 0.5) {
-          left = mapped;
-        } else {
-          right = mapped;
-        }
-      } else if (detected.length >= 2) {
-        // Mirror x for selfie view so user's left hand is on screen-left (x < 0.5)
-        const handA = detected[0].map((lm) => ({ x: 1 - lm.x, y: lm.y, z: lm.z }));
-        const handB = detected[1].map((lm) => ({ x: 1 - lm.x, y: lm.y, z: lm.z }));
-
-        if (handA[0].x < handB[0].x) {
-          left = handA;
-          right = handB;
-        } else {
-          left = handB;
-          right = handA;
-        }
-      }
-
-      setLandmarks({ left, right });
-
-      console.log('MediaPipe Results:', {
-        left: left ? left[0] : null,
-        right: right ? right[0] : null,
-        numHands: results.multiHandLandmarks?.length ?? 0,
+    try {
+      const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
       });
-    });
 
-    handsRef.current = hands;
-    setIsReady(true);
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+
+      hands.onResults((results: Results) => {
+        if (!isMountedRef.current) return;
+
+        const detected = results.multiHandLandmarks ?? [];
+        let left: Landmark[] | null = null;
+        let right: Landmark[] | null = null;
+
+        if (detected.length === 1) {
+          // Mirror x for selfie camera perspective
+          const mapped = detected[0].map((lm) => ({ x: 1 - lm.x, y: lm.y, z: lm.z }));
+          if (mapped[0].x < 0.5) {
+            left = mapped;
+          } else {
+            right = mapped;
+          }
+        } else if (detected.length >= 2) {
+          const handA = detected[0].map((lm) => ({ x: 1 - lm.x, y: lm.y, z: lm.z }));
+          const handB = detected[1].map((lm) => ({ x: 1 - lm.x, y: lm.y, z: lm.z }));
+
+          if (handA[0].x < handB[0].x) {
+            left = handA;
+            right = handB;
+          } else {
+            left = handB;
+            right = handA;
+          }
+        }
+
+        // Check for open palm pause gesture on either hand
+        const palmDetected = isHandOpenPalm(left) || isHandOpenPalm(right);
+
+        setLandmarks({ left, right });
+        setIsOpenPalm(palmDetected);
+      });
+
+      handsRef.current = hands;
+      setIsReady(true);
+    } catch (err) {
+      console.error('Failed to initialize MediaPipe Hands:', err);
+      setCameraError('Failed to load MediaPipe Hands model.');
+    }
 
     return () => {
-      hands.close();
+      isMountedRef.current = false;
+      if (handsRef.current) {
+        handsRef.current.close().catch(() => {});
+        handsRef.current = null;
+      }
     };
   }, []);
 
-  const startCamera = () => {
-    if (!videoRef.current || !handsRef.current) return;
+  // Frame processing loop using requestAnimationFrame
+  const processFrame = useCallback(async () => {
+    if (!isMountedRef.current) return;
+    const video = videoRef.current;
+    const hands = handsRef.current;
 
-    const camera = new Camera(videoRef.current, {
-      onFrame: async () => {
-        await handsRef.current?.send({ image: videoRef.current! });
-      },
-      width: 640,
-      height: 480,
-    });
+    if (video && hands && video.readyState >= 2 && !isProcessingRef.current) {
+      isProcessingRef.current = true;
+      try {
+        await hands.send({ image: video });
+      } catch {
+        // Ignore occasional frame drop
+      } finally {
+        isProcessingRef.current = false;
+      }
+    }
 
-    cameraRef.current = camera;
-    camera.start();
-  };
+    if (streamRef.current) {
+      animFrameIdRef.current = requestAnimationFrame(processFrame);
+    }
+  }, []);
 
-  const stopCamera = () => {
-    cameraRef.current?.stop();
-  };
+  const startCamera = useCallback(async () => {
+    if (!videoRef.current) return;
+    if (streamRef.current) return; // already active
+
+    try {
+      setCameraError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user',
+        },
+      });
+
+      if (!isMountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      streamRef.current = stream;
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+      setCameraActive(true);
+
+      // Start processing frames
+      animFrameIdRef.current = requestAnimationFrame(processFrame);
+    } catch (err: unknown) {
+      console.error('Error accessing webcam:', err);
+      const message =
+        err instanceof Error ? err.message : 'Webcam access denied or unavailable.';
+      setCameraError(message);
+      setCameraActive(false);
+    }
+  }, [processFrame]);
+
+  const stopCamera = useCallback(() => {
+    if (animFrameIdRef.current) {
+      cancelAnimationFrame(animFrameIdRef.current);
+      animFrameIdRef.current = null;
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setCameraActive(false);
+  }, []);
 
   return {
     videoRef,
     landmarks,
+    isOpenPalm,
     isReady,
+    cameraActive,
+    cameraError,
     startCamera,
     stopCamera,
   };

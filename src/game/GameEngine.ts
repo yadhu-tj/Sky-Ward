@@ -3,7 +3,7 @@ import type { ChunkRow } from './levelGenerator';
 import { updateBallPhysics, DEFAULT_PHYSICS_CONFIG } from './physics';
 import type { Ball, Bar, PhysicsConfig } from './physics';
 
-export type GameState = 'CALIBRATING' | 'READY' | 'PLAYING' | 'GAME_OVER';
+export type GameState = 'CALIBRATING' | 'READY' | 'PLAYING' | 'PAUSED' | 'GAME_OVER';
 
 export type DeathReason = 'HOLE_FALL' | 'RISING_FLOOR' | null;
 
@@ -13,6 +13,8 @@ export interface GameStats {
   deathReason: DeathReason;
   portalsUsed: number;
   timeElapsed: number;
+  shieldTimer: number;
+  isShieldActive: boolean;
 }
 
 export interface GameEngineConfig {
@@ -52,7 +54,8 @@ export class GameEngine {
 
   public portalsUsed: number = 0;
   public timeElapsed: number = 0;
-  public portalWarpAnimation: number = 0; // cooldown timer for visual effect
+  public portalWarpAnimation: number = 0;
+  public shieldTimer: number = 0; // Invulnerability countdown
 
   private generator: LevelGenerator;
   private config: GameEngineConfig;
@@ -65,8 +68,9 @@ export class GameEngine {
       x: this.config.barWidth / 2,
       radius: this.config.ballRadius,
       velocity: 0,
+      rotationRad: 0,
       isFalling: false,
-      fallSpeed: 0,
+      fallProgress: 0,
     };
 
     this.bar = {
@@ -74,6 +78,7 @@ export class GameEngine {
       height: this.config.barHeight,
       worldY: 0,
       angleRad: 0,
+      targetAngleRad: 0,
       holes: [],
     };
 
@@ -85,8 +90,9 @@ export class GameEngine {
       x: this.config.barWidth / 2,
       radius: this.config.ballRadius,
       velocity: 0,
+      rotationRad: 0,
       isFalling: false,
-      fallSpeed: 0,
+      fallProgress: 0,
     };
 
     this.bar = {
@@ -94,6 +100,7 @@ export class GameEngine {
       height: this.config.barHeight,
       worldY: 0,
       angleRad: 0,
+      targetAngleRad: 0,
       holes: [],
     };
 
@@ -103,10 +110,11 @@ export class GameEngine {
     this.portalsUsed = 0;
     this.timeElapsed = 0;
     this.portalWarpAnimation = 0;
+    this.shieldTimer = 0;
 
-    // Reset level generator and generate initial buffer of obstacle rows
-    this.generator.reset(100);
-    this.rows = this.generator.generateUpTo(1500, []);
+    // Reset level generator and generate initial obstacle buffer
+    this.generator.reset(140);
+    this.rows = this.generator.generateUpTo(1600, []);
   }
 
   public startGame(): void {
@@ -114,8 +122,16 @@ export class GameEngine {
     this.state = 'PLAYING';
   }
 
-  public setTiltAngle(angleRad: number): void {
-    this.bar.angleRad = angleRad;
+  public togglePause(): void {
+    if (this.state === 'PLAYING') {
+      this.state = 'PAUSED';
+    } else if (this.state === 'PAUSED') {
+      this.state = 'PLAYING';
+    }
+  }
+
+  public setTiltAngle(targetAngleRad: number): void {
+    this.bar.targetAngleRad = targetAngleRad;
   }
 
   public update(dt: number): void {
@@ -123,64 +139,117 @@ export class GameEngine {
       return;
     }
 
+    // Smooth mechanical angular interpolation (rotational damping)
+    const angleDiff = this.bar.targetAngleRad - this.bar.angleRad;
+    const tiltLerpSpeed = 15; // Smooth mechanical responsiveness
+    this.bar.angleRad += angleDiff * Math.min(1, tiltLerpSpeed * dt);
+
     this.timeElapsed += dt;
 
     if (this.portalWarpAnimation > 0) {
       this.portalWarpAnimation = Math.max(0, this.portalWarpAnimation - dt);
     }
 
-    // 1. Ascent progression
-    // Current altitude meters
-    const currentMeters = this.altitudePx / this.config.pixelsPerMeter;
-    const speedMultiplier = 1 + (currentMeters / 100) * 0.15; // gradual speedup
-    const currentAscentSpeed = this.config.initialAscentSpeed * speedMultiplier;
-    this.altitudePx += currentAscentSpeed * dt;
-    this.bar.worldY = this.altitudePx;
-
-    if (this.altitudePx > this.bestAltitudePx) {
-      this.bestAltitudePx = this.altitudePx;
+    if (this.shieldTimer > 0) {
+      this.shieldTimer = Math.max(0, this.shieldTimer - dt);
     }
 
-    // 2. Rising floor progression
-    const floorSpeed =
-      (this.config.floorBaseSpeed + (currentMeters / 100) * this.config.floorAcceleration) * speedMultiplier;
-    this.floorAltitudePx += floorSpeed * dt;
+    // 1. Ascent progression (unless falling into a hole)
+    if (!this.ball.isFalling) {
+      const currentMeters = this.altitudePx / this.config.pixelsPerMeter;
+      const speedMultiplier = 1 + (currentMeters / 100) * 0.12;
+      const currentAscentSpeed = this.config.initialAscentSpeed * speedMultiplier;
+      this.altitudePx += currentAscentSpeed * dt;
+      this.bar.worldY = this.altitudePx;
 
-    // Rising floor death condition: floor catches up to bar
-    if (this.floorAltitudePx >= this.altitudePx) {
-      this.triggerDeath('RISING_FLOOR');
+      if (this.altitudePx > this.bestAltitudePx) {
+        this.bestAltitudePx = this.altitudePx;
+      }
+
+      // 2. Rising floor progression
+      const floorSpeed =
+        (this.config.floorBaseSpeed + (currentMeters / 100) * this.config.floorAcceleration) *
+        speedMultiplier;
+      this.floorAltitudePx += floorSpeed * dt;
+
+      // Rising floor death condition: floor catches up to bar
+      if (this.floorAltitudePx >= this.altitudePx) {
+        this.triggerDeath('RISING_FLOOR');
+        return;
+      }
+    }
+
+    // 3. Populate obstacle rows ahead
+    this.rows = this.generator.generateUpTo(this.altitudePx + 1200, this.rows);
+
+    // Prune rows far below rising floor
+    this.rows = this.rows.filter((r) => r.worldY > this.floorAltitudePx - 200);
+
+    // 4. Update ball rolling physics
+    updateBallPhysics(this.ball, this.bar, this.config.physicsConfig, dt);
+
+    // Check if falling animation finished
+    if (this.ball.isFalling && this.ball.fallProgress >= 1) {
+      this.triggerDeath('HOLE_FALL');
       return;
     }
 
-    // 3. Populate rows ahead
-    this.rows = this.generator.generateUpTo(this.altitudePx + 1200, this.rows);
-
-    // Prune rows far below the rising floor
-    this.rows = this.rows.filter((r) => r.worldY > this.floorAltitudePx - 200);
-
-    // 4. Identify active holes from rows intersecting the bar's current altitude
-    // Bar has a vertical thickness. If any row is within +/- 15px of altitude, check collision
-    const barAltitude = this.altitudePx;
-    const activeRow = this.rows.find((r) => Math.abs(r.worldY - barAltitude) < 18);
-
-    if (activeRow) {
-      this.bar.holes = activeRow.slots.map((s) => ({
-        id: `${activeRow.id}-${s.slotIndex}`,
-        startX: s.startX,
-        endX: s.endX,
-        isPortal: s.isPortal,
-      }));
-    } else {
-      this.bar.holes = [];
+    // 5. Accurate 2D Hole Collision Detection based on real ball world coordinates
+    if (!this.ball.isFalling) {
+      this.check2DObstacleCollisions();
     }
+  }
 
-    // 5. Update ball physics
-    const collision = updateBallPhysics(this.ball, this.bar, this.config.physicsConfig, dt);
+  /**
+   * Performs true 2D ellipse distance check between ball center and obstacle holes.
+   */
+  private check2DObstacleCollisions(): void {
+    const s = this.ball.x - this.config.barWidth / 2;
+    const cosTheta = Math.cos(this.bar.angleRad);
+    const sinTheta = Math.sin(this.bar.angleRad);
 
-    if (collision.type === 'HOLE') {
-      this.triggerDeath('HOLE_FALL');
-    } else if (collision.type === 'PORTAL') {
-      this.triggerPortalWarp();
+    // Ball 2D coordinates in playfield world space
+    // x: 0 to barWidth
+    // y: altitudePx (increasing upward)
+    const ballWorldX = this.config.barWidth / 2 + s * cosTheta;
+    const ballWorldY = this.altitudePx - s * sinTheta;
+
+    // Check all obstacle rows within vertical reach
+    for (const row of this.rows) {
+      const deltaY = ballWorldY - row.worldY;
+      if (Math.abs(deltaY) > 28) continue; // Not vertically aligned
+
+      for (const slot of row.slots) {
+        const holeCenterX = (slot.startX + slot.endX) / 2;
+        const deltaX = ballWorldX - holeCenterX;
+
+        const rx = (slot.endX - slot.startX) / 2;
+        const ry = 15; // Vertical radius of hole aperture
+
+        // Normalized distance squared inside ellipse
+        const distSq = (deltaX / rx) ** 2 + (deltaY / ry) ** 2;
+
+        // Ball must be solidly inside the aperture to fall in (0.55 threshold)
+        if (distSq <= 0.55) {
+          if (slot.isPortal) {
+            this.triggerPortalWarp();
+            return;
+          } else {
+            // Deadly hole: check if invulnerability shield is active
+            if (this.shieldTimer > 0) {
+              // Protected by warp shield!
+              return;
+            }
+
+            // Ball drops into hole with suck-in animation
+            this.ball.isFalling = true;
+            this.ball.fallProgress = 0;
+            this.ball.fallTargetX = holeCenterX;
+            this.ball.fallTargetY = row.worldY;
+            return;
+          }
+        }
+      }
     }
   }
 
@@ -190,14 +259,19 @@ export class GameEngine {
   }
 
   private triggerPortalWarp(): void {
-    // Warp altitude forward
-    const warpDistance = 350;
-    this.altitudePx += warpDistance;
+    const warpDistance = 350; // +7m
+    const targetAltitude = this.altitudePx + warpDistance;
+
+    // Guarantee a safe landing zone without holes
+    this.generator.addSafeZone(targetAltitude, 100);
+
+    this.altitudePx = targetAltitude;
     this.bar.worldY = this.altitudePx;
     this.portalsUsed++;
-    this.portalWarpAnimation = 0.6; // 600ms visual warp burst
+    this.portalWarpAnimation = 0.7; // Visual flash burst
+    this.shieldTimer = 2.0; // 2 seconds of invulnerability shield after warp!
 
-    // Reset ball velocity to avoid flying off
+    // Reset ball velocity for stable re-entry
     this.ball.velocity = 0;
   }
 
@@ -208,6 +282,8 @@ export class GameEngine {
       deathReason: this.deathReason,
       portalsUsed: this.portalsUsed,
       timeElapsed: Math.floor(this.timeElapsed),
+      shieldTimer: this.shieldTimer,
+      isShieldActive: this.shieldTimer > 0,
     };
   }
 

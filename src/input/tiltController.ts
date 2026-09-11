@@ -7,9 +7,9 @@ export interface TiltConfig {
 }
 
 export const DEFAULT_TILT_CONFIG: TiltConfig = {
-  calibrationFrames: 60,
-  emaAlpha: 0.15,
-  deadZoneDegrees: 1.5,
+  calibrationFrames: 30, // ~1s at 30fps
+  emaAlpha: 0.18,
+  deadZoneDegrees: 1.2,
 };
 
 export interface TiltDebugState {
@@ -26,6 +26,8 @@ export interface TiltDebugState {
   calibrationProgress: number; // 0 to 1
   isCalibrated: boolean;
   neutralOffsetDeg: number;
+  isOpenPalm: boolean;
+  palmPauseTriggered: boolean;
 }
 
 /**
@@ -45,13 +47,12 @@ export function calculateRawTilt(landmarks: HandLandmarks): { angleRad: number; 
   const deltaY = rightWrist.y - leftWrist.y;
   const deltaX = rightWrist.x - leftWrist.x;
 
-  // Ensure hands have separation
+  // Ensure hands have reasonable horizontal separation
   if (Math.abs(deltaX) < 0.05) {
     return null;
   }
 
   // Tilt Angle = arctan((Y_right - Y_left) / deltaX)
-  // When deltaX > 0 and right is lower (deltaY > 0), atan2 produces positive angle
   const angleRad = Math.atan2(deltaY, Math.abs(deltaX));
 
   return {
@@ -70,7 +71,7 @@ export class Calibrator {
   private offsetDeg: number = 0;
   private complete: boolean = false;
 
-  constructor(targetFrames: number = 60) {
+  constructor(targetFrames: number = 30) {
     this.targetFrames = targetFrames;
   }
 
@@ -78,6 +79,16 @@ export class Calibrator {
     this.samples = [];
     this.offsetDeg = 0;
     this.complete = false;
+  }
+
+  public skip(): void {
+    if (this.samples.length > 0) {
+      const sum = this.samples.reduce((a, b) => a + b, 0);
+      this.offsetDeg = sum / this.samples.length;
+    } else {
+      this.offsetDeg = 0;
+    }
+    this.complete = true;
   }
 
   public update(rawAngleDeg: number): boolean {
@@ -114,7 +125,7 @@ export class EMASmoother {
   private alpha: number;
   private currentSmoothed: number | null = null;
 
-  constructor(alpha: number = 0.15) {
+  constructor(alpha: number = 0.18) {
     this.alpha = alpha;
   }
 
@@ -145,7 +156,7 @@ export class EMASmoother {
  * Returns 0 if within dead zone threshold.
  * Smoothly transitions outside dead zone to prevent jumps.
  */
-export function applyDeadZone(angleDeg: number, thresholdDeg: number = 1.5): number {
+export function applyDeadZone(angleDeg: number, thresholdDeg: number = 1.2): number {
   if (Math.abs(angleDeg) <= thresholdDeg) {
     return 0;
   }
@@ -155,12 +166,15 @@ export function applyDeadZone(angleDeg: number, thresholdDeg: number = 1.5): num
 
 /**
  * Manages full tilt processing pipeline:
- * Raw -> Calibrate -> Smooth -> Deadzone
+ * Raw -> Calibrate -> Smooth -> Deadzone + Gesture Pause detection
  */
 export class TiltPipeline {
   private calibrator: Calibrator;
   private smoother: EMASmoother;
   private deadZoneDeg: number;
+
+  private palmHoldFrames: number = 0;
+  private palmCooldown: number = 0; // cooldown in frames
 
   constructor(config: TiltConfig = DEFAULT_TILT_CONFIG) {
     this.calibrator = new Calibrator(config.calibrationFrames);
@@ -173,7 +187,28 @@ export class TiltPipeline {
     this.smoother.reset();
   }
 
-  public process(landmarks: HandLandmarks): TiltDebugState {
+  public skipCalibration(): void {
+    this.calibrator.skip();
+  }
+
+  public process(landmarks: HandLandmarks, isOpenPalm: boolean = false): TiltDebugState {
+    if (this.palmCooldown > 0) {
+      this.palmCooldown--;
+    }
+
+    let palmPauseTriggered = false;
+    if (isOpenPalm && this.palmCooldown === 0) {
+      this.palmHoldFrames++;
+      // Require holding open palm for ~8 frames (~0.25s) to trigger
+      if (this.palmHoldFrames >= 8) {
+        palmPauseTriggered = true;
+        this.palmHoldFrames = 0;
+        this.palmCooldown = 35; // ~1.2s cooldown
+      }
+    } else {
+      this.palmHoldFrames = Math.max(0, this.palmHoldFrames - 1);
+    }
+
     const raw = calculateRawTilt(landmarks);
 
     if (!raw) {
@@ -191,6 +226,8 @@ export class TiltPipeline {
         calibrationProgress: this.calibrator.progress,
         isCalibrated: this.calibrator.isComplete,
         neutralOffsetDeg: this.calibrator.neutralOffset,
+        isOpenPalm,
+        palmPauseTriggered,
       };
     }
 
@@ -213,6 +250,8 @@ export class TiltPipeline {
         calibrationProgress: this.calibrator.progress,
         isCalibrated: false,
         neutralOffsetDeg: this.calibrator.neutralOffset,
+        isOpenPalm,
+        palmPauseTriggered,
       };
     }
 
@@ -240,6 +279,8 @@ export class TiltPipeline {
       calibrationProgress: 1,
       isCalibrated: true,
       neutralOffsetDeg: this.calibrator.neutralOffset,
+      isOpenPalm,
+      palmPauseTriggered,
     };
   }
 }

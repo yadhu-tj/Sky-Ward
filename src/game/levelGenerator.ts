@@ -7,18 +7,19 @@ export interface HoleSlot {
 
 export interface ChunkRow {
   id: string;
-  worldY: number; // Altitude in world coordinates (smaller or more negative is higher up, or altitude increases upward)
+  worldY: number; // Altitude in world coordinates (altitude increases upward)
   height: number;
   slots: HoleSlot[];
+  isSafeZone?: boolean;
 }
 
 export interface GeneratorConfig {
   barWidth: number;
   slotCount: number;
-  chunkSpacing: number; // Vertical distance between obstacle rows (e.g. 140px)
+  chunkSpacing: number; // Vertical distance between obstacle rows (px)
   holeProbability: number; // 0.20 to 0.30
   portalProbability: number; // 0.10
-  maxConsecutiveHoles: number; // max 2 consecutive slots with holes
+  maxConsecutiveHoles: number; // max consecutive slots with holes
 }
 
 export const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
@@ -26,7 +27,7 @@ export const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
   slotCount: 8,
   chunkSpacing: 160,
   holeProbability: 0.25,
-  portalProbability: 0.10,
+  portalProbability: 0.12,
   maxConsecutiveHoles: 2,
 };
 
@@ -34,6 +35,7 @@ export class LevelGenerator {
   private config: GeneratorConfig;
   private nextRowIndex: number = 0;
   private highestWorldY: number = 0;
+  private safeZones: Array<{ minY: number; maxY: number }> = [];
 
   constructor(config: Partial<GeneratorConfig> = {}) {
     this.config = { ...DEFAULT_GENERATOR_CONFIG, ...config };
@@ -42,29 +44,51 @@ export class LevelGenerator {
   public reset(startingWorldY: number = 0): void {
     this.nextRowIndex = 0;
     this.highestWorldY = startingWorldY;
+    this.safeZones = [];
+  }
+
+  /**
+   * Adds a vertical safe zone where no holes or hazards can spawn (e.g. portal landing zone).
+   */
+  public addSafeZone(worldY: number, halfWidth: number = 90): void {
+    this.safeZones.push({
+      minY: worldY - halfWidth,
+      maxY: worldY + halfWidth,
+    });
   }
 
   /**
    * Generates a single chunk row with hole placements satisfying the guaranteed-path rule.
    */
   public generateRow(worldY: number): ChunkRow {
-    const { barWidth, slotCount, holeProbability, portalProbability, maxConsecutiveHoles } = this.config;
+    const { barWidth, slotCount, holeProbability, portalProbability, maxConsecutiveHoles } =
+      this.config;
     const slotWidth = barWidth / slotCount;
     const slots: HoleSlot[] = [];
+
+    // Check if worldY is in a safe zone
+    const isSafe = this.safeZones.some((z) => worldY >= z.minY && worldY <= z.maxY);
+    if (isSafe) {
+      return {
+        id: `chunk-row-${this.nextRowIndex++}`,
+        worldY,
+        height: 36,
+        slots: [],
+        isSafeZone: true,
+      };
+    }
 
     // Decide which slots have holes while guaranteeing a path
     let consecutiveHoles = 0;
     const hasHole: boolean[] = Array.from({ length: slotCount }, () => false);
 
     for (let i = 0; i < slotCount; i++) {
-      // Never allow all slots or more than maxConsecutiveHoles
       if (consecutiveHoles >= maxConsecutiveHoles) {
         hasHole[i] = false;
         consecutiveHoles = 0;
         continue;
       }
 
-      // Roll for hole
       const shouldHaveHole = Math.random() < holeProbability;
       if (shouldHaveHole) {
         hasHole[i] = true;
@@ -78,7 +102,6 @@ export class LevelGenerator {
     // Guaranteed path check: ensure at least 2 safe slots exist per row
     const safeSlotsCount = hasHole.filter((h) => !h).length;
     if (safeSlotsCount < 2) {
-      // Force at least 2 slots to be safe
       hasHole[Math.floor(slotCount / 2)] = false;
       hasHole[0] = false;
     }
@@ -111,10 +134,7 @@ export class LevelGenerator {
    */
   public generateUpTo(targetWorldY: number, existingRows: ChunkRow[]): ChunkRow[] {
     const newRows: ChunkRow[] = [...existingRows];
-    
-    // In our coordinate system, ascending means worldY decreases (towards negative infinity),
-    // or worldY represents altitude (increasing upwards).
-    // Let worldAltitude increase: targetAltitude > highestWorldY
+
     while (this.highestWorldY < targetWorldY) {
       this.highestWorldY += this.config.chunkSpacing;
       newRows.push(this.generateRow(this.highestWorldY));
