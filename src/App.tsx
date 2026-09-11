@@ -54,12 +54,11 @@ function App() {
     return () => window.removeEventListener('resize', updateScale);
   }, []);
 
-  // Poll engine state for header status badge
+  // Hook up event-driven engine state listener (zero polling overhead)
   useEffect(() => {
-    const interval = setInterval(() => {
-      setEngineState(engineRef.current.state);
-    }, 100);
-    return () => clearInterval(interval);
+    engineRef.current.onStateChange = (newState) => {
+      setEngineState(newState);
+    };
   }, []);
 
   // Keyboard controls (Arrow keys for tilt, Space/P for pause)
@@ -67,8 +66,10 @@ function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') {
         setKeyboardAngleRad(-0.28); // ~-16 deg
+        engineRef.current.setTiltAngle(-0.28);
       } else if (e.key === 'ArrowRight') {
         setKeyboardAngleRad(0.28); // ~+16 deg
+        engineRef.current.setTiltAngle(0.28);
       } else if (e.code === 'Space' || e.key.toLowerCase() === 'p') {
         e.preventDefault();
         engineRef.current.togglePause();
@@ -78,6 +79,7 @@ function App() {
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         setKeyboardAngleRad(0);
+        engineRef.current.setTiltAngle(0);
       }
     };
 
@@ -93,13 +95,18 @@ function App() {
     const nextState = pipelineRef.current.process(landmarks, isOpenPalm);
     setDebugState(nextState);
 
+    // Sync tilt directly to engine at 60fps
+    if (keyboardAngleRad === null || keyboardAngleRad === 0) {
+      engineRef.current.setTiltAngle(nextState.finalAngleRad);
+    }
+
     // Palm pause ONLY triggers if the game is actively PLAYING!
     // Never while already paused, game over, or starting up.
     if (nextState.palmPauseTriggered && engineRef.current.state === 'PLAYING') {
       pipelineRef.current.lockoutPauseGesture(60);
       engineRef.current.pause();
     }
-  }, []);
+  }, [keyboardAngleRad]);
 
   const handleResetCalibration = useCallback(() => {
     pipelineRef.current.resetCalibration();
@@ -179,7 +186,10 @@ function App() {
 
   return (
     <div className="arcade-app">
-      <div className="arcade-viewport" style={{ transform: `scale(${scale})` }}>
+      <div
+        className="arcade-viewport"
+        style={scale < 0.99 || scale > 1.01 ? { transform: `scale(${scale})` } : undefined}
+      >
         {/* Sleek Top Marquee */}
         <header className="arcade-header">
           <div className="brand-section">

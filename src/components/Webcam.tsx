@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useMediaPipeHands } from '../hooks/useMediaPipeHands';
 import type { HandLandmarks } from '../hooks/useMediaPipeHands';
 
@@ -8,7 +8,7 @@ interface WebcamProps {
   height?: number;
 }
 
-export function Webcam({ onLandmarks, width = 480, height = 320 }: WebcamProps) {
+export const Webcam = React.memo(function Webcam({ onLandmarks, width = 480, height = 320 }: WebcamProps) {
   const {
     videoRef,
     landmarks,
@@ -206,4 +206,4 @@ export function Webcam({ onLandmarks, width = 480, height = 320 }: WebcamProps) 
       )}
     </div>
   );
-}
+});

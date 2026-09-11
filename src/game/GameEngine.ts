@@ -46,6 +46,14 @@ export const DEFAULT_ENGINE_CONFIG: GameEngineConfig = {
 export class GameEngine {
   public state: GameState = 'CALIBRATING';
   public deathReason: DeathReason = null;
+  public onStateChange?: (state: GameState) => void;
+
+  public changeState(newState: GameState): void {
+    if (this.state !== newState) {
+      this.state = newState;
+      this.onStateChange?.(newState);
+    }
+  }
 
   public bar: Bar;
   public ball: Ball;
@@ -122,27 +130,27 @@ export class GameEngine {
 
   public startGame(): void {
     this.reset();
-    this.state = 'COUNTDOWN';
+    this.changeState('COUNTDOWN');
     this.countdownTimer = 3.2; // 3 seconds plus brief "GO!"
   }
 
   public pause(): void {
     if (this.state === 'PLAYING') {
-      this.state = 'PAUSED';
+      this.changeState('PAUSED');
     }
   }
 
   public resume(): void {
     if (this.state === 'PAUSED') {
-      this.state = 'PLAYING';
+      this.changeState('PLAYING');
     }
   }
 
   public togglePause(): void {
     if (this.state === 'PLAYING') {
-      this.state = 'PAUSED';
+      this.changeState('PAUSED');
     } else if (this.state === 'PAUSED') {
-      this.state = 'PLAYING';
+      this.changeState('PLAYING');
     }
   }
 
@@ -165,7 +173,7 @@ export class GameEngine {
 
       if (this.countdownTimer <= 0) {
         this.countdownTimer = 0;
-        this.state = 'PLAYING';
+        this.changeState('PLAYING');
       }
       return;
     }
@@ -289,7 +297,7 @@ export class GameEngine {
 
   private triggerDeath(reason: DeathReason): void {
     this.deathReason = reason;
-    this.state = 'GAME_OVER';
+    this.changeState('GAME_OVER');
   }
 
   private triggerPortalWarp(): void {

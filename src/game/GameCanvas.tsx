@@ -12,44 +12,53 @@ interface GameCanvasProps {
   onTogglePause: () => void;
 }
 
-export const GameCanvas: React.FC<GameCanvasProps> = ({
-  engine,
-  tiltAngleRad,
-  isCalibrated,
-  onStartGame,
-  onSkipCalibrationAndStart,
-  onRestart,
-  onTogglePause,
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [gameState, setGameState] = useState<GameState>(engine.state);
-  const [stats, setStats] = useState(engine.stats);
-  const [floorGapMeters, setFloorGapMeters] = useState(Math.floor(engine.floorGap / 50));
+export const GameCanvas = React.memo<GameCanvasProps>(
+  function GameCanvas({
+    engine,
+    tiltAngleRad,
+    isCalibrated,
+    onStartGame,
+    onSkipCalibrationAndStart,
+    onRestart,
+    onTogglePause,
+  }) {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [gameState, setGameState] = useState<GameState>(engine.state);
+    const [stats, setStats] = useState(engine.stats);
+    const [floorGapMeters, setFloorGapMeters] = useState(Math.floor(engine.floorGap / 50));
 
-  // Sync tilt angle to engine
-  useEffect(() => {
-    engine.setTiltAngle(tiltAngleRad);
-  }, [engine, tiltAngleRad]);
+    // Sync tilt angle to engine
+    useEffect(() => {
+      engine.setTiltAngle(tiltAngleRad);
+    }, [engine, tiltAngleRad]);
 
-  // Main 60FPS Game Loop
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    // Main 60FPS Game Loop
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-    let animationFrameId: number;
-    let lastTime = performance.now();
+      let animationFrameId: number;
+      let lastTime = performance.now();
+      let lastHudTime = 0;
+      let lastState = engine.state;
 
-    const render = (time: number) => {
-      const dt = Math.min((time - lastTime) / 1000, 0.1);
-      lastTime = time;
+      const render = (time: number) => {
+        const dt = Math.min((time - lastTime) / 1000, 0.1);
+        lastTime = time;
 
-      // Update engine physics & logic (handles pause internally)
-      engine.update(dt);
-      setGameState(engine.state);
-      setStats({ ...engine.stats });
-      setFloorGapMeters(Math.floor(engine.floorGap / 50));
+        // Update engine physics & logic (handles pause internally)
+        engine.update(dt);
+
+        // Throttled HUD update: only every 120ms or immediately when state changes!
+        if (time - lastHudTime > 120 || engine.state !== lastState) {
+          lastHudTime = time;
+          lastState = engine.state;
+          setGameState(engine.state);
+          setStats({ ...engine.stats });
+          setFloorGapMeters(Math.floor(engine.floorGap / 50));
+        }
 
       const width = canvas.width;
       const height = canvas.height;
@@ -359,7 +368,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         height: '660px',
         borderRadius: '16px',
         overflow: 'hidden',
-        boxShadow: '0 8px 36px rgba(0,0,0,0.7)',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
         border: '2px solid #1e293b',
         background: '#070b14',
         flexShrink: 0,
@@ -673,4 +682,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       )}
     </div>
   );
-};
+},
+(prev, next) => {
+  // Sync tilt angle to engine imperatively so GameCanvas avoids DOM re-render on angle change!
+  if (prev.tiltAngleRad !== next.tiltAngleRad) {
+    next.engine.setTiltAngle(next.tiltAngleRad);
+  }
+  return (
+    prev.isCalibrated === next.isCalibrated &&
+    prev.engine === next.engine &&
+    prev.onStartGame === next.onStartGame &&
+    prev.onSkipCalibrationAndStart === next.onSkipCalibrationAndStart &&
+    prev.onRestart === next.onRestart &&
+    prev.onTogglePause === next.onTogglePause
+  );
+});

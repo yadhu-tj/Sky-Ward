@@ -14,7 +14,9 @@ interface LandscapeCockpitProps {
   isKeyboardSteering: boolean;
 }
 
-export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = ({
+const RADAR_SEGMENTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
   state,
   engine,
   onLandmarks,
@@ -27,23 +29,26 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = ({
   const [gameState, setGameState] = useState<GameState>(engine.state);
   const [floorGapMeters, setFloorGapMeters] = useState<number>(Math.floor(engine.floorGap / 50));
 
-  // Sync engine telemetry at 20fps for smooth dashboard gauges
+  // Throttled engine telemetry sync (120ms) - only triggers React update when values change
   useEffect(() => {
-    let animId: number;
-    let lastPoll = 0;
+    const interval = setInterval(() => {
+      const curFloor = Math.floor(engine.floorGap / 50);
+      setFloorGapMeters((prev) => (prev !== curFloor ? curFloor : prev));
+      setGameState((prev) => (prev !== engine.state ? engine.state : prev));
+      setEngineStats((prev) => {
+        if (
+          prev.altitudeMeters === engine.stats.altitudeMeters &&
+          prev.bestAltitudeMeters === engine.stats.bestAltitudeMeters &&
+          prev.portalsUsed === engine.stats.portalsUsed &&
+          prev.isShieldActive === engine.stats.isShieldActive
+        ) {
+          return prev;
+        }
+        return { ...engine.stats };
+      });
+    }, 120);
 
-    const pollEngine = (now: number) => {
-      if (now - lastPoll > 50) {
-        lastPoll = now;
-        setEngineStats({ ...engine.stats });
-        setGameState(engine.state);
-        setFloorGapMeters(Math.floor(engine.floorGap / 50));
-      }
-      animId = requestAnimationFrame(pollEngine);
-    };
-
-    animId = requestAnimationFrame(pollEngine);
-    return () => cancelAnimationFrame(animId);
+    return () => clearInterval(interval);
   }, [engine]);
 
   const {
@@ -527,18 +532,16 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = ({
             border: '1px solid #1e293b',
           }}
         >
-          {Array.from({ length: 12 }).map((_, i) => {
-            const segmentMeters = (i + 1) * 1;
+          {RADAR_SEGMENTS.map((segmentMeters, i) => {
             const isFilled = floorGapMeters >= segmentMeters;
             const color = i < 3 ? '#ef4444' : i < 6 ? '#f59e0b' : '#10b981';
             return (
               <div
-                key={i}
+                key={segmentMeters}
                 style={{
                   borderRadius: '2px',
                   background: isFilled ? color : '#1e293b',
                   opacity: isFilled ? 1 : 0.25,
-                  boxShadow: isFilled ? `0 0 4px ${color}` : 'none',
                   transition: 'background 0.15s ease',
                 }}
               />
@@ -641,4 +644,4 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = ({
       </div>
     </aside>
   );
-};
+});
