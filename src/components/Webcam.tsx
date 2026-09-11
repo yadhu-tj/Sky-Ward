@@ -48,25 +48,37 @@ export const Webcam = React.memo(function Webcam({ onLandmarks, width = 480, hei
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const drawHand = (points: Array<{ x: number; y: number }>, color: string) => {
-      ctx.fillStyle = color;
+    const drawHand = (points: Array<{ x: number; y: number }>, isLeft: boolean) => {
+      // Draw skeletal nodes
       points.forEach((pt, index) => {
         const px = pt.x * canvas.width;
         const py = pt.y * canvas.height;
         ctx.beginPath();
-        ctx.arc(px, py, index === 0 ? 8 : 4, 0, Math.PI * 2);
-        ctx.fill();
+        if (index === 0) {
+          // Wrist datum point
+          ctx.arc(px, py, 6, 0, Math.PI * 2);
+          ctx.fillStyle = isLeft ? '#38bdf8' : '#10b981';
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } else {
+          // Finger nodes
+          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+          ctx.fill();
+        }
       });
     };
 
     if (landmarks.left) {
-      drawHand(landmarks.left, '#38bdf8');
+      drawHand(landmarks.left, true);
     }
     if (landmarks.right) {
-      drawHand(landmarks.right, '#10b981');
+      drawHand(landmarks.right, false);
     }
 
-    // If both wrists detected, draw tilt bridge line
+    // Precision Inclinometer bridge line between wrists
     if (landmarks.left && landmarks.right) {
       const p1 = { x: landmarks.left[0].x * canvas.width, y: landmarks.left[0].y * canvas.height };
       const p2 = { x: landmarks.right[0].x * canvas.width, y: landmarks.right[0].y * canvas.height };
@@ -74,35 +86,44 @@ export const Webcam = React.memo(function Webcam({ onLandmarks, width = 480, hei
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 4;
-      ctx.setLineDash([6, 6]);
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.85)';
+      ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.setLineDash([]);
+
+      // Center datum crosshair on bridge line
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(midX, midY, 3, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     // Open Palm Pause Indicator badge on video
     if (isOpenPalm) {
-      ctx.fillStyle = 'rgba(6, 182, 212, 0.85)';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
       ctx.beginPath();
-      ctx.roundRect(canvas.width / 2 - 80, 12, 160, 32, 8);
+      ctx.roundRect(canvas.width / 2 - 75, 12, 150, 28, 6);
       ctx.fill();
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 12px monospace';
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = '600 11px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('✋ PAUSE GESTURE', canvas.width / 2, 32);
+      ctx.fillText('✋ PAUSE ENGAGED', canvas.width / 2, 30);
     } else if (!landmarks.left || !landmarks.right) {
-      // Gentle helper
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
+      // Discreet stance cue
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
       ctx.beginPath();
-      ctx.roundRect(canvas.width / 2 - 110, canvas.height - 36, 220, 26, 6);
+      ctx.roundRect(canvas.width / 2 - 100, canvas.height - 32, 200, 24, 6);
       ctx.fill();
 
       ctx.fillStyle = '#94a3b8';
-      ctx.font = '11px sans-serif';
+      ctx.font = '500 10.5px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Show both hands in frame to steer', canvas.width / 2, canvas.height - 19);
+      ctx.fillText('Position both hands in frame', canvas.width / 2, canvas.height - 16);
     }
   }, [landmarks, isOpenPalm, onLandmarks]);
 

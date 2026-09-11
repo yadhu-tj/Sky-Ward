@@ -194,7 +194,7 @@ function App() {
         <header className="arcade-header">
           <div className="brand-section">
             <span className="brand-title">SKYWARD ROLL</span>
-            <span className="brand-pill">ARCADE COCKPIT</span>
+            <span className="brand-pill">PRECISION SERIES</span>
           </div>
 
           <div className="status-section">
@@ -210,26 +210,22 @@ function App() {
                     ? '#f59e0b'
                     : engineState === 'GAME_OVER'
                     ? '#ef4444'
-                    : '#a855f7',
+                    : '#94a3b8',
                 boxShadow:
                   engineState === 'PLAYING'
-                    ? '0 0 8px #10b981'
-                    : engineState === 'COUNTDOWN'
-                    ? '0 0 8px #38bdf8'
-                    : engineState === 'PAUSED'
-                    ? '0 0 8px #f59e0b'
+                    ? '0 0 5px rgba(16, 185, 129, 0.5)'
                     : 'none',
               }}
             />
-            <span style={{ color: '#cbd5e1' }}>
+            <span style={{ color: '#cbd5e1', letterSpacing: '0.5px' }}>
               {engineState === 'PLAYING'
-                ? 'ACTIVE CLIMB'
+                ? 'ACTIVE ASCENT'
                 : engineState === 'COUNTDOWN'
-                ? 'CALIBRATING & READY'
+                ? 'ZEROING POSTURE'
                 : engineState === 'PAUSED'
-                ? 'PAUSED'
+                ? 'SUSPENDED'
                 : engineState === 'GAME_OVER'
-                ? 'GAME OVER'
+                ? 'FLIGHT CONCLUDED'
                 : 'SYSTEM READY'}
             </span>
           </div>
