@@ -191,6 +191,15 @@ export class TiltPipeline {
     this.calibrator.skip();
   }
 
+  /**
+   * Temporarily locks out palm pause detection (e.g. after starting or resuming game).
+   * Prevents accidental pauses while player moves hands from mouse/keyboard to steering posture.
+   */
+  public lockoutPauseGesture(frames: number = 75): void {
+    this.palmCooldown = Math.max(this.palmCooldown, frames);
+    this.palmHoldFrames = 0;
+  }
+
   public process(landmarks: HandLandmarks, isOpenPalm: boolean = false): TiltDebugState {
     if (this.palmCooldown > 0) {
       this.palmCooldown--;
@@ -199,14 +208,14 @@ export class TiltPipeline {
     let palmPauseTriggered = false;
     if (isOpenPalm && this.palmCooldown === 0) {
       this.palmHoldFrames++;
-      // Require holding open palm for ~8 frames (~0.25s) to trigger
-      if (this.palmHoldFrames >= 8) {
+      // Require holding open palm for ~14 frames (~0.45s) of deliberate gesture
+      if (this.palmHoldFrames >= 14) {
         palmPauseTriggered = true;
         this.palmHoldFrames = 0;
-        this.palmCooldown = 35; // ~1.2s cooldown
+        this.palmCooldown = 60; // 2.0s cooldown
       }
     } else {
-      this.palmHoldFrames = Math.max(0, this.palmHoldFrames - 1);
+      this.palmHoldFrames = Math.max(0, this.palmHoldFrames - 2);
     }
 
     const raw = calculateRawTilt(landmarks);

@@ -122,6 +122,18 @@ export class GameEngine {
     this.state = 'PLAYING';
   }
 
+  public pause(): void {
+    if (this.state === 'PLAYING') {
+      this.state = 'PAUSED';
+    }
+  }
+
+  public resume(): void {
+    if (this.state === 'PAUSED') {
+      this.state = 'PLAYING';
+    }
+  }
+
   public togglePause(): void {
     if (this.state === 'PLAYING') {
       this.state = 'PAUSED';

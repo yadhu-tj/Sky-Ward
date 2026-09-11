@@ -63,9 +63,11 @@ function App() {
     const nextState = pipelineRef.current.process(landmarks, isOpenPalm);
     setDebugState(nextState);
 
-    // If open palm gesture was held to trigger pause
-    if (nextState.palmPauseTriggered) {
-      engineRef.current.togglePause();
+    // Palm pause ONLY triggers if the game is actively PLAYING!
+    // Never while already paused, game over, or starting up.
+    if (nextState.palmPauseTriggered && engineRef.current.state === 'PLAYING') {
+      pipelineRef.current.lockoutPauseGesture(60);
+      engineRef.current.pause();
     }
   }, []);
 
@@ -97,11 +99,13 @@ function App() {
   }, []);
 
   const handleStartGame = useCallback(() => {
+    pipelineRef.current.lockoutPauseGesture(80); // 2.7s lockout so reaching for keyboard/mouse won't pause
     engineRef.current.startGame();
   }, []);
 
   const handleSkipCalibrationAndStart = useCallback(() => {
     pipelineRef.current.skipCalibration();
+    pipelineRef.current.lockoutPauseGesture(80);
     setDebugState((prev) => ({
       ...prev,
       isCalibrated: true,
@@ -113,11 +117,18 @@ function App() {
   }, []);
 
   const handleRestart = useCallback(() => {
+    pipelineRef.current.lockoutPauseGesture(80);
     engineRef.current.startGame();
   }, []);
 
   const handleTogglePause = useCallback(() => {
-    engineRef.current.togglePause();
+    if (engineRef.current.state === 'PAUSED') {
+      pipelineRef.current.lockoutPauseGesture(80); // Lockout when resuming
+      engineRef.current.resume();
+    } else if (engineRef.current.state === 'PLAYING') {
+      pipelineRef.current.lockoutPauseGesture(60);
+      engineRef.current.pause();
+    }
   }, []);
 
   // Use keyboard tilt if active, otherwise use hand tilt pipeline

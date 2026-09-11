@@ -26,9 +26,18 @@ export function isHandOpenPalm(hand: Landmark[] | null): boolean {
   const dist = (p1: Landmark, p2: Landmark) =>
     Math.hypot(p1.x - p2.x, p1.y - p2.y);
 
+  // Hand must be raised off the desk/keyboard level (not resting down at the bottom margin)
+  if (wrist.y > 0.82) return false;
+
   // Hand must have significant scale in the frame (prominently shown to camera)
   const palmScale = dist(wrist, middleMcp);
-  if (palmScale < 0.12) return false;
+  if (palmScale < 0.10) return false;
+
+  // Vertical elevation check: middle fingertip must be significantly higher than the wrist
+  const middleTip = hand[12];
+  if (wrist.y - middleTip.y < 0.14) {
+    return false; // Hand is tilted flat, horizontal, or pointing down towards keyboard
+  }
 
   const fingerIndices = [
     { mcp: 5, tip: 8 },   // Index
