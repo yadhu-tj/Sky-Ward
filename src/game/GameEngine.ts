@@ -256,10 +256,14 @@ export class GameEngine {
         const rx = (slot.endX - slot.startX) / 2;
         const ry = 15; // Matches hole radius on canvas
 
-        // Normalized distance squared inside the visible hole ellipse
-        const distSq = (deltaX / rx) ** 2 + (deltaY / ry) ** 2;
+        // Any area of the colored hole/portal is active:
+        // Expanded by ball radius so touching ANY part of the red rim or hole triggers death/warp!
+        const touchRx = rx + this.ball.radius * 0.85;
+        const touchRy = ry + this.ball.radius * 0.85;
 
-        // The entire visible red hole (distSq <= 1.0) is deadly!
+        const distSq = (deltaX / touchRx) ** 2 + (deltaY / touchRy) ** 2;
+
+        // If ball touches ANY part of the colored area:
         if (distSq <= 1.0) {
           if (slot.isPortal) {
             this.triggerPortalWarp();
