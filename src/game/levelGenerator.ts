@@ -27,7 +27,7 @@ export const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
   slotCount: 8,
   chunkSpacing: 160,
   holeProbability: 0.25,
-  portalProbability: 0.12,
+  portalProbability: 0.06, // balanced spawn rate
   maxConsecutiveHoles: 2,
 };
 
@@ -36,6 +36,7 @@ export class LevelGenerator {
   private nextRowIndex: number = 0;
   private highestWorldY: number = 0;
   private safeZones: Array<{ minY: number; maxY: number }> = [];
+  private lastPortalWorldY: number = -9999;
 
   constructor(config: Partial<GeneratorConfig> = {}) {
     this.config = { ...DEFAULT_GENERATOR_CONFIG, ...config };
@@ -45,6 +46,7 @@ export class LevelGenerator {
     this.nextRowIndex = 0;
     this.highestWorldY = startingWorldY;
     this.safeZones = [];
+    this.lastPortalWorldY = -9999;
   }
 
   /**
@@ -107,9 +109,19 @@ export class LevelGenerator {
     }
 
     // Build HoleSlot objects
+    let portalPlacedInRow = false;
     for (let i = 0; i < slotCount; i++) {
       if (hasHole[i]) {
-        const isPortal = Math.random() < portalProbability;
+        // Portal can only appear if cooldown distance (750px) has passed and not yet placed in this row
+        const canSpawnPortal =
+          !portalPlacedInRow && worldY - this.lastPortalWorldY >= 750;
+        const isPortal = canSpawnPortal && Math.random() < portalProbability;
+
+        if (isPortal) {
+          portalPlacedInRow = true;
+          this.lastPortalWorldY = worldY;
+        }
+
         slots.push({
           slotIndex: i,
           startX: i * slotWidth + slotWidth * 0.1,

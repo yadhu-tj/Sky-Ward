@@ -83,14 +83,25 @@ export function useMediaPipeHands() {
       hands.setOptions({
         maxNumHands: 2,
         modelComplexity: 1,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5,
+        minDetectionConfidence: 0.65,
+        minTrackingConfidence: 0.65,
       });
 
       hands.onResults((results: Results) => {
         if (!isMountedRef.current) return;
 
-        const detected = results.multiHandLandmarks ?? [];
+        const rawDetected = results.multiHandLandmarks ?? [];
+
+        // Filter out false positive ghost detections (e.g. neck/chin edge noise)
+        const detected = rawDetected.filter((hand) => {
+          if (!hand || hand.length < 21) return false;
+          // Valid hand should have reasonable distance between wrist (0) and middle MCP (9)
+          const wrist = hand[0];
+          const middleMcp = hand[9];
+          const span = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y);
+          return span >= 0.08;
+        });
+
         let left: Landmark[] | null = null;
         let right: Landmark[] | null = null;
 
@@ -115,8 +126,10 @@ export function useMediaPipeHands() {
           }
         }
 
-        // Check for open palm pause gesture on either hand
-        const palmDetected = isHandOpenPalm(left) || isHandOpenPalm(right);
+        // Strict Single-Hand Palm Pause Rule:
+        // Palm pause must ONLY work if a single hand is shown. If 2 hands are present, it must NOT work.
+        const isSingleHand = detected.length === 1;
+        const palmDetected = isSingleHand && (isHandOpenPalm(left) || isHandOpenPalm(right));
 
         setLandmarks({ left, right });
         setIsOpenPalm(palmDetected);

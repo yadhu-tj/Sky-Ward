@@ -34,10 +34,10 @@ export interface PhysicsConfig {
 }
 
 export const DEFAULT_PHYSICS_CONFIG: PhysicsConfig = {
-  gravity: 880,
-  damping: 0.018,
-  maxVelocity: 1100,
-  staticFrictionAngleRad: 0.018, // ~1.0 degree threshold for static friction
+  gravity: 1350,
+  damping: 0.0035, // Crisp metallic rolling instead of viscous fluid drag
+  maxVelocity: 1400,
+  staticFrictionAngleRad: 0.012, // ~0.7 degree threshold
 };
 
 export type CollisionResult =
@@ -70,41 +70,44 @@ export function updateBallPhysics(
 
   ball.velocity += accel * dt;
 
-  // 2. Rolling resistance & damping
+  // 2. Realistic rolling friction: constant subtle deceleration opposing motion
+  const rollingFriction = 36; // px/s^2 constant deceleration
+  if (Math.abs(ball.velocity) > 0) {
+    const frictionDecel = Math.min(Math.abs(ball.velocity), rollingFriction * dt);
+    ball.velocity -= Math.sign(ball.velocity) * frictionDecel;
+  }
+
+  // 3. Subtle air drag
   const dampingFactor = Math.pow(Math.max(0, 1 - config.damping), dt * 60);
   ball.velocity *= dampingFactor;
 
-  // 3. Static friction at near-flat incline:
-  // If the bar is nearly level and velocity is low, stop creeping
-  if (Math.abs(bar.angleRad) < config.staticFrictionAngleRad && Math.abs(ball.velocity) < 25) {
-    ball.velocity *= 0.85;
-    if (Math.abs(ball.velocity) < 2) {
-      ball.velocity = 0;
-    }
+  // 4. Static friction at near-flat incline
+  if (Math.abs(bar.angleRad) < config.staticFrictionAngleRad && Math.abs(ball.velocity) < 12) {
+    ball.velocity = 0;
   }
 
-  // 4. Max velocity clamp
+  // 5. Max velocity clamp
   if (Math.abs(ball.velocity) > config.maxVelocity) {
     ball.velocity = Math.sign(ball.velocity) * config.maxVelocity;
   }
 
-  // 5. Position update & surface roll rotation
+  // 6. Position update & surface roll rotation
   const displacement = ball.velocity * dt;
   ball.x += displacement;
   ball.rotationRad += displacement / ball.radius;
 
-  // 6. Edge clamping with slight mechanical bounce absorption
+  // 7. Edge clamping with crisp mechanical bounce
   let collisionResult: CollisionResult = { type: 'NONE' };
 
   if (ball.x - ball.radius < 0) {
     ball.x = ball.radius;
-    ball.velocity = -ball.velocity * 0.12; // subtle cushion bounce
-    if (Math.abs(ball.velocity) < 5) ball.velocity = 0;
+    ball.velocity = -ball.velocity * 0.32; // crisp mechanical bounce
+    if (Math.abs(ball.velocity) < 8) ball.velocity = 0;
     collisionResult = { type: 'EDGE', edge: 'LEFT' };
   } else if (ball.x + ball.radius > bar.width) {
     ball.x = bar.width - ball.radius;
-    ball.velocity = -ball.velocity * 0.12;
-    if (Math.abs(ball.velocity) < 5) ball.velocity = 0;
+    ball.velocity = -ball.velocity * 0.32;
+    if (Math.abs(ball.velocity) < 8) ball.velocity = 0;
     collisionResult = { type: 'EDGE', edge: 'RIGHT' };
   }
 

@@ -71,6 +71,18 @@ function App() {
 
   const handleResetCalibration = useCallback(() => {
     pipelineRef.current.resetCalibration();
+    setDebugState((prev) => ({
+      ...prev,
+      isCalibrating: true,
+      isCalibrated: false,
+      calibrationProgress: 0,
+      neutralOffsetDeg: 0,
+      rawAngleDeg: 0,
+      calibratedAngleDeg: 0,
+      smoothedAngleDeg: 0,
+      finalAngleDeg: 0,
+      finalAngleRad: 0,
+    }));
   }, []);
 
   const handleSkipCalibration = useCallback(() => {
