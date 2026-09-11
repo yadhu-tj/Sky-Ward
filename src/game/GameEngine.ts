@@ -202,35 +202,35 @@ export class GameEngine {
 
   /**
    * Performs true 2D ellipse distance check between ball center and obstacle holes.
+   * Matches exact rendered canvas coordinates so the entire visible red hole is deadly.
    */
   private check2DObstacleCollisions(): void {
     const s = this.ball.x - this.config.barWidth / 2;
     const cosTheta = Math.cos(this.bar.angleRad);
     const sinTheta = Math.sin(this.bar.angleRad);
 
-    // Ball 2D coordinates in playfield world space
-    // x: 0 to barWidth
-    // y: altitudePx (increasing upward)
-    const ballWorldX = this.config.barWidth / 2 + s * cosTheta;
-    const ballWorldY = this.altitudePx - s * sinTheta;
+    // Exact ball center offset in world space (including bar half-height + ball radius)
+    const ballOffsetNormal = -(this.config.barHeight / 2 + this.ball.radius); // -17px
+    const ballWorldX = this.config.barWidth / 2 + s * cosTheta - ballOffsetNormal * sinTheta;
+    const ballWorldY = this.altitudePx - s * sinTheta - ballOffsetNormal * cosTheta;
 
-    // Check all obstacle rows within vertical reach
+    // Check all obstacle rows within reach
     for (const row of this.rows) {
       const deltaY = ballWorldY - row.worldY;
-      if (Math.abs(deltaY) > 28) continue; // Not vertically aligned
+      if (Math.abs(deltaY) > 32) continue; // Not vertically near this row
 
       for (const slot of row.slots) {
         const holeCenterX = (slot.startX + slot.endX) / 2;
         const deltaX = ballWorldX - holeCenterX;
 
         const rx = (slot.endX - slot.startX) / 2;
-        const ry = 15; // Vertical radius of hole aperture
+        const ry = 15; // Matches hole radius on canvas
 
-        // Normalized distance squared inside ellipse
+        // Normalized distance squared inside the visible hole ellipse
         const distSq = (deltaX / rx) ** 2 + (deltaY / ry) ** 2;
 
-        // Ball must be solidly inside the aperture to fall in (0.55 threshold)
-        if (distSq <= 0.55) {
+        // The entire visible red hole (distSq <= 1.0) is deadly!
+        if (distSq <= 1.0) {
           if (slot.isPortal) {
             this.triggerPortalWarp();
             return;
