@@ -32,7 +32,7 @@ export interface GameEngineConfig {
 }
 
 export const DEFAULT_ENGINE_CONFIG: GameEngineConfig = {
-  barWidth: 540,
+  barWidth: 700,
   barHeight: 14,
   ballRadius: 10,
   initialAscentSpeed: 70,
@@ -65,7 +65,7 @@ export class GameEngine {
 
   constructor(config: Partial<GameEngineConfig> = {}) {
     this.config = { ...DEFAULT_ENGINE_CONFIG, ...config };
-    this.generator = new LevelGenerator({ barWidth: this.config.barWidth });
+    this.generator = new LevelGenerator({ barWidth: this.config.barWidth, slotCount: 10 });
 
     this.ball = {
       x: this.config.barWidth / 2,

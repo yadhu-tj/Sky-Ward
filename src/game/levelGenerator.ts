@@ -23,9 +23,9 @@ export interface GeneratorConfig {
 }
 
 export const DEFAULT_GENERATOR_CONFIG: GeneratorConfig = {
-  barWidth: 600,
-  slotCount: 8,
-  chunkSpacing: 160,
+  barWidth: 700,
+  slotCount: 10,
+  chunkSpacing: 165,
   holeProbability: 0.25,
   portalProbability: 0.06, // balanced spawn rate
   maxConsecutiveHoles: 2,

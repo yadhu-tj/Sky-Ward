@@ -1,11 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Webcam } from './components/Webcam';
 import type { HandLandmarks } from './hooks/useMediaPipeHands';
 import { TiltPipeline, DEFAULT_TILT_CONFIG } from './input/tiltController';
 import type { TiltDebugState } from './input/tiltController';
-import { TiltDebugView } from './components/TiltDebugView';
 import { GameEngine } from './game/GameEngine';
 import { GameCanvas } from './game/GameCanvas';
+import { LandscapeCockpit } from './components/LandscapeCockpit';
 import './App.css';
 
 const INITIAL_DEBUG_STATE: TiltDebugState = {
@@ -31,6 +30,37 @@ function App() {
   const engineRef = useRef<GameEngine>(new GameEngine());
   const [debugState, setDebugState] = useState<TiltDebugState>(INITIAL_DEBUG_STATE);
   const [keyboardAngleRad, setKeyboardAngleRad] = useState<number | null>(null);
+  const [engineState, setEngineState] = useState(engineRef.current.state);
+  const [scale, setScale] = useState(1);
+
+  // Responsive scale calculation to guarantee zero vertical scrolling on any landscape display
+  useEffect(() => {
+    const updateScale = () => {
+      const targetW = 1260;
+      const targetH = 716;
+      const padX = 24;
+      const padY = 20;
+      const availableW = window.innerWidth - padX;
+      const availableH = window.innerHeight - padY;
+      const scaleW = availableW / targetW;
+      const scaleH = availableH / targetH;
+      // Scale gracefully down on compact 768p laptop viewports or up to 1.15 on 4K
+      const computed = Math.min(Math.max(0.55, Math.min(scaleW, scaleH)), 1.15);
+      setScale(computed);
+    };
+
+    updateScale();
+    window.addEventListener('resize', updateScale);
+    return () => window.removeEventListener('resize', updateScale);
+  }, []);
+
+  // Poll engine state for header status badge
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setEngineState(engineRef.current.state);
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
 
   // Keyboard controls (Arrow keys for tilt, Space/P for pause)
   useEffect(() => {
@@ -133,6 +163,14 @@ function App() {
     }
   }, []);
 
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
   // Use keyboard tilt if active, otherwise use hand tilt pipeline
   const activeTiltRad =
     keyboardAngleRad !== null && keyboardAngleRad !== 0
@@ -140,87 +178,87 @@ function App() {
       : debugState.finalAngleRad;
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        padding: '1.25rem 2rem',
-        minHeight: '100vh',
-        background: '#070b14',
-        color: '#f8fafc',
-        boxSizing: 'border-box',
-      }}
-    >
-      <header style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-        <h1
-          style={{
-            margin: '0 0 0.25rem 0',
-            fontSize: '2.2rem',
-            letterSpacing: '1.5px',
-            color: '#38bdf8',
-          }}
-        >
-          SKYWARD ROLL
-        </h1>
-        <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.95rem' }}>
-          Motion-Controlled Arcade Platformer · Hand Tilt & Gravity Projection
-        </p>
-      </header>
+    <div className="arcade-app">
+      <div className="arcade-viewport" style={{ transform: `scale(${scale})` }}>
+        {/* Sleek Top Marquee */}
+        <header className="arcade-header">
+          <div className="brand-section">
+            <span className="brand-title">SKYWARD ROLL</span>
+            <span className="brand-pill">ARCADE COCKPIT</span>
+          </div>
 
-      {/* Main Container: Game on left, Camera & Debug on right */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'row',
-          gap: '1.5rem',
-          alignItems: 'flex-start',
-          justifyContent: 'center',
-          flexWrap: 'wrap',
-          maxWidth: '1240px',
-          width: '100%',
-        }}
-      >
-        {/* Playfield Canvas */}
-        <GameCanvas
-          engine={engineRef.current}
-          tiltAngleRad={activeTiltRad}
-          isCalibrated={debugState.isCalibrated}
-          onStartGame={handleStartGame}
-          onSkipCalibrationAndStart={handleSkipCalibrationAndStart}
-          onRestart={handleRestart}
-          onTogglePause={handleTogglePause}
-        />
+          <div className="status-section">
+            <span
+              className="status-dot"
+              style={{
+                background:
+                  engineState === 'PLAYING'
+                    ? '#10b981'
+                    : engineState === 'COUNTDOWN'
+                    ? '#38bdf8'
+                    : engineState === 'PAUSED'
+                    ? '#f59e0b'
+                    : engineState === 'GAME_OVER'
+                    ? '#ef4444'
+                    : '#a855f7',
+                boxShadow:
+                  engineState === 'PLAYING'
+                    ? '0 0 8px #10b981'
+                    : engineState === 'COUNTDOWN'
+                    ? '0 0 8px #38bdf8'
+                    : engineState === 'PAUSED'
+                    ? '0 0 8px #f59e0b'
+                    : 'none',
+              }}
+            />
+            <span style={{ color: '#cbd5e1' }}>
+              {engineState === 'PLAYING'
+                ? 'ACTIVE CLIMB'
+                : engineState === 'COUNTDOWN'
+                ? 'CALIBRATING & READY'
+                : engineState === 'PAUSED'
+                ? 'PAUSED'
+                : engineState === 'GAME_OVER'
+                ? 'GAME OVER'
+                : 'SYSTEM READY'}
+            </span>
+          </div>
 
-        {/* Right Panel: Camera & Tilt Debugger */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '480px' }}>
-          <Webcam onLandmarks={handleLandmarks} width={480} height={320} />
-          <TiltDebugView
-            state={debugState}
-            onResetCalibration={handleResetCalibration}
-            onSkipCalibration={handleSkipCalibration}
+          <div className="header-actions">
+            <span>
+              Steer: <kbd>←</kbd> <kbd>→</kbd> / Hands
+            </span>
+            <span>
+              Pause: <kbd>Space</kbd> / <kbd>P</kbd> / ✋
+            </span>
+            <button className="header-btn" onClick={toggleFullscreen} title="Toggle Fullscreen">
+              ⛶ Fullscreen
+            </button>
+          </div>
+        </header>
+
+        {/* Main Stage: Playfield Canvas + Landscape Cockpit side-by-side */}
+        <main className="arcade-stage">
+          <GameCanvas
+            engine={engineRef.current}
+            tiltAngleRad={activeTiltRad}
+            isCalibrated={debugState.isCalibrated}
+            onStartGame={handleStartGame}
+            onSkipCalibrationAndStart={handleSkipCalibrationAndStart}
+            onRestart={handleRestart}
+            onTogglePause={handleTogglePause}
           />
 
-          <div
-            style={{
-              padding: '10px 14px',
-              background: '#0f172a',
-              borderRadius: '8px',
-              border: '1px solid #1e293b',
-              fontSize: '0.8rem',
-              color: '#64748b',
-              textAlign: 'center',
-              lineHeight: 1.5,
-            }}
-          >
-            <div>
-              Controls: Tilt hands or hold <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#e2e8f0' }}>←</kbd> / <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#e2e8f0' }}>→</kbd> to steer.
-            </div>
-            <div style={{ marginTop: '4px' }}>
-              Pause: Hold open palm ✋ in front of camera, or press <kbd style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', color: '#e2e8f0' }}>Space</kbd>.
-            </div>
-          </div>
-        </div>
+          <LandscapeCockpit
+            state={debugState}
+            engine={engineRef.current}
+            onLandmarks={handleLandmarks}
+            onResetCalibration={handleResetCalibration}
+            onSkipCalibration={handleSkipCalibration}
+            onTogglePause={handleTogglePause}
+            isKeyboardSteering={keyboardAngleRad !== null && keyboardAngleRad !== 0}
+          />
+        </main>
       </div>
     </div>
   );

@@ -355,16 +355,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     <div
       style={{
         position: 'relative',
-        width: '600px',
+        width: '780px',
         height: '660px',
-        borderRadius: '14px',
+        borderRadius: '16px',
         overflow: 'hidden',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-        border: '2px solid #334155',
+        boxShadow: '0 8px 36px rgba(0,0,0,0.7)',
+        border: '2px solid #1e293b',
         background: '#070b14',
+        flexShrink: 0,
       }}
     >
-      <canvas ref={canvasRef} width={600} height={660} style={{ display: 'block' }} />
+      <canvas ref={canvasRef} width={780} height={660} style={{ display: 'block' }} />
 
       {/* Top HUD */}
       <div
