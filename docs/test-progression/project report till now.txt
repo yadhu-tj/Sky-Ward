@@ -1,0 +1,7 @@
+the next test find that suddenly the hand detection lost. the recalibration button didn't work. there is an image on that folder that shows the details. 
+the second major thing is 
+the ball should roll more realistically rather than rolling over something very viscous material.
+also the appearce of the portal is kinda freaquent on some place. need to do something about that.
+for the pause setting,
+the palm pause should only work if a single hand is shown, like the second hand should not be present. if there is a seond hand , the hand pause should not work.
+After this is corrected, we progress to the next version where the entire game is converted into a landscape rather than in a single box

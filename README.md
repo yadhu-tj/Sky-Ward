@@ -1,32 +1,127 @@
-# React + TypeScript + Vite
+# Sky-Ward (Skyward Roll)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+> **Motion-Controlled Endless Arcade Survival**  
+> A fast-paced reimagining of the classic 1983 Taito arcade game *Ice Cold Beer*, powered by real-time webcam computer vision and modern mechanical physics.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🎮 Overview
 
-## React Compiler
+In **Sky-Ward**, the player uses natural webcam hand gestures to balance and steer a horizontal mechanical bar carrying a rolling tungsten ball. As the bar ascends through dangerous obstacle chunks, the player must navigate past deadly counter-bored apertures, escape a rising molten lava hazard floor, and ride teleporting warp portals into higher atmospheric sectors.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the Oxlint configuration
+## ✨ Features
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+- **Computer Vision Gesture Steering**:
+  - Real-time hand landmark tracking via **MediaPipe Hands**.
+  - Differential vertical height tracking (\(Y_{\text{right}} - Y_{\text{left}}\)) providing precise, low-fatigue tilt control.
+  - Automatic neutral posture calibration with 3-second countdown lock.
+  - Single-hand open palm pause gesture recognition with grace lockout.
+  - Anti-spike protection and angular slew-rate guards to prevent sudden bar snaps.
+- **Realistic Mechanical Rolling Physics**:
+  - Inclined plane rolling inertia with solid sphere mechanics (\(\frac{5}{7} g \sin\theta\)).
+  - Edge interaction: gentle bumper bounce on shallow tilts, steep-tilt (>12°) edge slip and fall-off.
+  - Sinking ball animations and molten lava splashes on hazard impact.
+- **Procedural Level Generation & Atmospheric Sectors**:
+  - Chunk-based obstacle spawning with guaranteed-path solvability.
+  - Progressive sector difficulty (Lower Silo, Intermediate Shaft, Upper Ascent, Stratospheric Gate).
+  - Physical milestone gateway arches with safe breathing corridors between sectors.
+  - Teleporting warp portals with visual burst animations and temporary invulnerability shield grace periods.
+- **Luxury Avionics & Arcade Telemetry Cockpit**:
+  - Unified landscape cockpit layout with flight instruments.
+  - Real-time altitude gauges, rising floor proximity tracker, velocity vector display, and hand lock status.
+  - Built-in interactive *How To Play* modal and debug telemetry toggle.
+  - Keyboard fallback controls (`ArrowLeft` / `ArrowRight` / `Space` / `R`) for full accessibility.
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+---
+
+## 🕹️ Controls
+
+| Control | Motion Gesture | Keyboard Fallback |
+|---|---|---|
+| **Steer Left** | Lower left hand / Raise right hand | `ArrowLeft` or `A` |
+| **Steer Right** | Lower right hand / Raise left hand | `ArrowRight` or `D` |
+| **Neutral / Level** | Hold hands level at chest height | Release keys |
+| **Pause / Resume** | Show single open palm to camera | `Space` |
+| **Recalibrate** | Click *Recalibrate* or hold level stance | `C` |
+| **Restart Game** | Click *Restart Flight* button | `R` |
+
+---
+
+## 🛠️ Tech Stack & Architecture
+
+- **Frontend Framework**: [React 18](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- **Bundler & Tooling**: [Vite 5](https://vitejs.dev/) + [Oxlint](https://oxc.rs/)
+- **Computer Vision**: [@mediapipe/hands](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker) + Camera Utils
+- **Graphics & Rendering**: High-performance HTML5 2D Canvas (60 FPS optimized, zero garbage allocation per frame)
+- **Styling**: Responsive modular CSS with aerospace avionics aesthetics
+
+```
+skyward-roll/
+├── docs/                             # Design specs, task trackers, test reports
+│   ├── Skyward_Roll_Game_Design.md   # Core design specification
+│   ├── TASK_TRACKER.md               # Phased development tracker
+│   └── test-progression/             # Test logs and telemetry screenshots
+├── public/                           # Static assets
+└── src/
+    ├── components/
+    │   ├── HowToPlayModal.tsx        # Interactive guide & gestures reference
+    │   ├── LandscapeCockpit.tsx      # Avionics cockpit HUD & telemetry instruments
+    │   ├── TiltDebugView.tsx         # Real-time angle readout & tuning stats
+    │   └── Webcam.tsx                # Video feed with landmark tracking overlay
+    ├── game/
+    │   ├── GameCanvas.tsx            # HTML5 Canvas renderer (bar, ball, hazards, lava)
+    │   ├── GameEngine.ts             # State machine, world generation, collision logic
+    │   ├── levelGenerator.ts         # Sector definitions, gateway rows, safe zones
+    │   └── physics.ts                # Angular acceleration, damping, edge slip physics
+    ├── hooks/
+    │   └── useMediaPipeHands.ts      # MediaPipe lifecycle, 30fps throttle, anti-swap tracking
+    ├── input/
+    │   └── tiltController.ts         # Calibrator, EMA smoothing, slew limiter, posture lock
+    ├── App.tsx                       # Root application container & mode orchestration
+    └── main.tsx                      # Application entrypoint
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (version 18+ recommended)
+- A working webcam for motion controls (or use keyboard fallback)
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yadhu-tj/Sky-Ward.git
+   cd Sky-Ward
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Launch development server:
+   ```bash
+   npm run dev
+   ```
+
+4. Build for production:
+   ```bash
+   npm run build
+   ```
+
+5. Run linting:
+   ```bash
+   npm run lint
+   ```
+
+---
+
+## 📄 License
+
+MIT License. Designed and developed by [Yadhu](https://github.com/yadhu-tj).
