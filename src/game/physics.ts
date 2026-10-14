@@ -44,7 +44,8 @@ export type CollisionResult =
   | { type: 'NONE' }
   | { type: 'HOLE'; hole: Hole }
   | { type: 'PORTAL'; portal: Hole }
-  | { type: 'EDGE'; edge: 'LEFT' | 'RIGHT' };
+  | { type: 'EDGE'; edge: 'LEFT' | 'RIGHT' }
+  | { type: 'EDGE_FALL'; edge: 'LEFT' | 'RIGHT' };
 
 /**
  * Updates ball physics for a single time step with realistic rolling sphere inertia.
@@ -96,19 +97,42 @@ export function updateBallPhysics(
   ball.x += displacement;
   ball.rotationRad += displacement / ball.radius;
 
-  // 7. Edge clamping with crisp mechanical bounce
+  // 7. Edge interaction: gentle bounce vs steep/high-speed slip off the bar into lava
   let collisionResult: CollisionResult = { type: 'NONE' };
 
+  // Left Edge Check
   if (ball.x - ball.radius < 0) {
-    ball.x = ball.radius;
-    ball.velocity = -ball.velocity * 0.32; // crisp mechanical bounce
-    if (Math.abs(ball.velocity) < 8) ball.velocity = 0;
-    collisionResult = { type: 'EDGE', edge: 'LEFT' };
-  } else if (ball.x + ball.radius > bar.width) {
-    ball.x = bar.width - ball.radius;
-    ball.velocity = -ball.velocity * 0.32;
-    if (Math.abs(ball.velocity) < 8) ball.velocity = 0;
-    collisionResult = { type: 'EDGE', edge: 'RIGHT' };
+    // If tilted down to the left (> 12°) or high speed toward edge, ball rolls off the bar!
+    const isSteepLeft = bar.angleRad < -0.21;
+    const isFastLeft = ball.velocity < -280;
+    const isPastEdge = ball.x < 2;
+
+    if ((isSteepLeft && isPastEdge) || (isFastLeft && isPastEdge) || ball.x < -6) {
+      collisionResult = { type: 'EDGE_FALL', edge: 'LEFT' };
+    } else {
+      // Gentle bumper bounce
+      ball.x = ball.radius;
+      ball.velocity = -ball.velocity * 0.32;
+      if (Math.abs(ball.velocity) < 8) ball.velocity = 0;
+      collisionResult = { type: 'EDGE', edge: 'LEFT' };
+    }
+  }
+  // Right Edge Check
+  else if (ball.x + ball.radius > bar.width) {
+    // If tilted down to the right (> 12°) or high speed toward edge, ball rolls off the bar!
+    const isSteepRight = bar.angleRad > 0.21;
+    const isFastRight = ball.velocity > 280;
+    const isPastEdge = ball.x > bar.width - 2;
+
+    if ((isSteepRight && isPastEdge) || (isFastRight && isPastEdge) || ball.x > bar.width + 6) {
+      collisionResult = { type: 'EDGE_FALL', edge: 'RIGHT' };
+    } else {
+      // Gentle bumper bounce
+      ball.x = bar.width - ball.radius;
+      ball.velocity = -ball.velocity * 0.32;
+      if (Math.abs(ball.velocity) < 8) ball.velocity = 0;
+      collisionResult = { type: 'EDGE', edge: 'RIGHT' };
+    }
   }
 
   return collisionResult;
