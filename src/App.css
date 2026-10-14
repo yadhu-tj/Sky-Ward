@@ -2,6 +2,18 @@
   box-sizing: border-box;
 }
 
+:root {
+  --neon-cyan: #00f3ff;
+  --neon-pink: #ff007f;
+  --neon-yellow: #ffe600;
+  --neon-lime: #39ff14;
+  --neon-purple: #a855f7;
+  --arcade-dark: #070312;
+  --arcade-panel: #110724;
+  --arcade-border: #3b176d;
+  --arcade-bezel: #1c0d38;
+}
+
 html,
 body,
 #root {
@@ -10,14 +22,18 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #080b11;
+  background: var(--arcade-dark);
+  background-image: 
+    radial-gradient(circle at 50% 20%, rgba(168, 85, 247, 0.12) 0%, transparent 60%),
+    radial-gradient(circle at 80% 80%, rgba(0, 243, 255, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(255, 0, 127, 0.08) 0%, transparent 50%);
   color: #f8fafc;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Chakra Petch', -apple-system, sans-serif;
   user-select: none;
   -webkit-user-select: none;
 }
 
-/* Base Precision Cabinet Container */
+/* Base Arcade Cabinet Environment */
 .arcade-app {
   width: 100vw;
   height: 100vh;
@@ -25,7 +41,6 @@ body,
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: #080b11;
   position: relative;
 }
 
@@ -41,19 +56,25 @@ body,
   z-index: 1;
 }
 
-/* Premium Top Marquee Bar */
+/* ==========================================================================
+   RETRO ARCADE MARQUEE HEADER
+   ========================================================================== */
 .arcade-header {
   width: 1260px;
-  height: 42px;
+  height: 50px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #0f1420;
-  border: 1px solid #1e293b;
-  border-radius: 10px;
-  padding: 0 16px;
-  margin-bottom: 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(180deg, #1b0c36 0%, #100624 100%);
+  border: 2px solid var(--arcade-border);
+  border-radius: 12px;
+  padding: 0 18px;
+  margin-bottom: 12px;
+  box-shadow: 
+    0 0 20px rgba(168, 85, 247, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.6);
+  position: relative;
 }
 
 .brand-section {
@@ -63,69 +84,140 @@ body,
 }
 
 .brand-title {
-  font-size: 1.1rem;
-  font-weight: 800;
-  letter-spacing: 2.5px;
-  color: #f8fafc;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.95rem;
+  letter-spacing: 2px;
+  color: #ffffff;
+  text-shadow: 
+    0 0 7px var(--neon-cyan),
+    0 0 14px var(--neon-cyan),
+    0 0 24px var(--neon-pink);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-title .star-badge {
+  color: var(--neon-yellow);
+  animation: starPulse 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes starPulse {
+  0% { transform: scale(0.9) rotate(-10deg); filter: drop-shadow(0 0 4px var(--neon-yellow)); }
+  100% { transform: scale(1.15) rotate(10deg); filter: drop-shadow(0 0 12px var(--neon-yellow)); }
 }
 
 .brand-pill {
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 1.5px;
-  background: #161e2e;
-  color: #94a3b8;
-  border: 1px solid #283347;
-  padding: 2px 8px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.55rem;
+  background: #ff007f;
+  color: #ffffff;
+  padding: 3px 8px;
   border-radius: 4px;
+  letter-spacing: 1px;
+  box-shadow: 0 0 10px rgba(255, 0, 127, 0.6);
+  text-transform: uppercase;
 }
 
+/* Center Arcade Marquee Status */
 .status-section {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: monospace;
-  font-size: 0.78rem;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 4px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .status-dot {
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
+  animation: blinkDot 1s infinite alternate;
 }
 
+@keyframes blinkDot {
+  0% { opacity: 0.4; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1.15); }
+}
+
+.status-text {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 1px;
+}
+
+/* Right Marquee Actions */
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
-  font-size: 0.72rem;
-  color: #64748b;
-  font-family: monospace;
+  gap: 12px;
 }
 
+/* 3D Pushbutton Styling */
 .header-btn {
-  background: #161e2e;
-  color: #cbd5e1;
-  border: 1px solid #283347;
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+  color: #ffffff;
+  border: none;
   border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 0.7rem;
-  font-family: monospace;
+  padding: 8px 16px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.5px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
-  transition: all 0.15s ease;
+  justify-content: center;
+  box-shadow: 0 3px 0 #1e3a8a, 0 4px 8px rgba(0, 0, 0, 0.5);
+  transition: all 0.08s ease;
 }
 
-.header-btn:hover {
-  background: #1f293d;
-  color: #ffffff;
-  border-color: #3e4c66;
+.header-btn-manual {
+  background: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%);
+  box-shadow: 0 3px 0 #5b21b6, 0 4px 8px rgba(109, 40, 217, 0.35);
 }
 
-/* Main Arcade Stage (Canvas + Cockpit side-by-side) */
+.header-btn-manual:hover {
+  background: linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 0 #5b21b6, 0 6px 12px rgba(139, 92, 246, 0.5);
+}
+
+.header-btn-manual:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #5b21b6;
+}
+
+.header-btn-fullscreen {
+  background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
+  box-shadow: 0 3px 0 #075985, 0 4px 8px rgba(2, 132, 199, 0.35);
+}
+
+.header-btn-fullscreen:hover {
+  background: linear-gradient(180deg, #38bdf8 0%, #0284c7 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 0 #075985, 0 6px 12px rgba(56, 189, 248, 0.45);
+}
+
+.header-btn-fullscreen:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #075985;
+}
+
+/* Retro Keycaps */
+kbd {
+  background: #1e1338;
+  color: var(--neon-cyan);
+  border: 1px solid var(--neon-cyan);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.55rem;
+  box-shadow: 0 2px 0 rgba(0, 243, 255, 0.35);
+}
+
+/* Main Arcade Stage */
 .arcade-stage {
   display: flex;
   flex-direction: row;
@@ -136,13 +228,21 @@ body,
   height: 660px;
 }
 
-kbd {
-  background: #161e2e;
-  color: #e2e8f0;
-  border: 1px solid #283347;
-  padding: 1px 5px;
-  border-radius: 4px;
-  font-family: monospace;
-  font-size: 0.72rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+/* CRT Scanline Bezel Overlay */
+.crt-overlay {
+  position: relative;
+}
+
+.crt-overlay::after {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  background: 
+    linear-gradient(rgba(18, 16, 26, 0) 50%, rgba(0, 0, 0, 0.28) 50%),
+    linear-gradient(90deg, rgba(255, 0, 127, 0.02), rgba(0, 243, 255, 0.02), rgba(255, 230, 0, 0.02));
+  background-size: 100% 3px, 6px 100%;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 10;
 }

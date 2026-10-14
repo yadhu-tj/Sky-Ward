@@ -25,6 +25,8 @@ export const TiltDebugView: React.FC<TiltDebugViewProps> = ({
     isCalibrated,
     neutralOffsetDeg,
     isOpenPalm,
+    isHandLockActive,
+    handLockStatus,
   } = state;
 
   return (
@@ -65,7 +67,7 @@ export const TiltDebugView: React.FC<TiltDebugViewProps> = ({
           <button
             onClick={onResetCalibration}
             style={{
-              background: '#475569',
+              background: isCalibrating ? '#0284c7' : '#475569',
               color: '#fff',
               border: 'none',
               padding: '4px 10px',
@@ -75,12 +77,12 @@ export const TiltDebugView: React.FC<TiltDebugViewProps> = ({
               fontSize: '0.8rem',
             }}
           >
-            Recalibrate
+            {isCalibrating ? (hasBothHands ? 'Locking...' : 'Waiting Hands') : 'Re-Lock [C]'}
           </button>
         </div>
       </div>
 
-      {/* Hands Detection & Gesture Status */}
+      {/* Hands Detection, Hand Lock & Palm Gesture Status */}
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
         <div>
           <strong>Hands: </strong>
@@ -89,11 +91,15 @@ export const TiltDebugView: React.FC<TiltDebugViewProps> = ({
           </span>
         </div>
         <div>
-          <strong>Palm Gesture: </strong>
-          <span style={{ color: isOpenPalm ? '#38bdf8' : '#64748b', fontWeight: 'bold' }}>
-            {isOpenPalm ? '✋ Open (Pause)' : 'None'}
+          <strong>Hand Lock: </strong>
+          <span style={{ color: isHandLockActive ? '#34d399' : '#f59e0b', fontWeight: 'bold' }}>
+            {isHandLockActive ? '🔒 LOCKED' : `⏳ ${handLockStatus}`}
           </span>
         </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#94a3b8' }}>
+        <span>Palm Gesture: <strong style={{ color: isOpenPalm ? '#38bdf8' : '#64748b' }}>{isOpenPalm ? '✋ Open' : 'None'}</strong></span>
       </div>
 
       {hasBothHands && leftHand && rightHand && (
@@ -105,9 +111,11 @@ export const TiltDebugView: React.FC<TiltDebugViewProps> = ({
       {/* Calibration Progress */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '0.8rem' }}>
-          <span>
+          <span style={{ color: isCalibrating && !hasBothHands ? '#f59e0b' : '#f8fafc' }}>
             {isCalibrating
-              ? 'Hold hands neutral (~1s)...'
+              ? hasBothHands
+                ? 'Hold hands neutral (~1s)...'
+                : 'Raise both hands in view to calibrate...'
               : isCalibrated
               ? `Calibrated (Offset: ${neutralOffsetDeg.toFixed(1)}°)`
               : 'Calibration needed'}
