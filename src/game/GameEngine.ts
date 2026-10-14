@@ -1,11 +1,25 @@
-import { LevelGenerator } from './levelGenerator';
+import { LevelGenerator, getSectorForAltitude } from './levelGenerator';
 import type { ChunkRow } from './levelGenerator';
 import { updateBallPhysics, DEFAULT_PHYSICS_CONFIG } from './physics';
 import type { Ball, Bar, PhysicsConfig } from './physics';
 
 export type GameState = 'CALIBRATING' | 'READY' | 'COUNTDOWN' | 'PLAYING' | 'PAUSED' | 'GAME_OVER';
 
-export type DeathReason = 'HOLE_FALL' | 'RISING_FLOOR' | null;
+export type DeathReason = 'HOLE_FALL' | 'RISING_FLOOR' | 'EDGE_FALL' | null;
+
+export interface BallLavaFall {
+  worldX: number; // In playfield coordinate space (0 to barWidth)
+  worldY: number; // World altitude px
+  vx: number;     // px/s horizontal velocity
+  vy: number;     // px/s vertical velocity in world altitude (negative = falling downwards toward floorAltitudePx)
+  rotationRad: number;
+  rotationSpeed: number;
+  hasHitLava: boolean;
+  lavaSplashPending: boolean; // One-shot flag for canvas to trigger particle burst & screen shake
+  lavaSplashTimer: number; // 0 to ~0.85s after touching lava
+  scale: number;           // 1 down to ~0.1 as it sinks
+  glowIntensity: number;   // 0 to 1 heat glow
+}
 
 export interface GameStats {
   altitudeMeters: number;
@@ -17,6 +31,17 @@ export interface GameStats {
   isShieldActive: boolean;
   countdownTimer: number;
   countdownSeconds: number;
+  // Sector Level Progression Metrics
+  sectorIndex: number;
+  sectorLevel: number;
+  sectorName: string;
+  sectorCode: string;
+  sectorProgress: number; // 0.0 to 1.0
+  nextGateAltitudeMeters: number;
+  metersToNextGate: number;
+  highestSectorReached: number;
+  promotionBannerTimer: number;
+  promotedSectorName: string;
 }
 
 export interface GameEngineConfig {
@@ -67,6 +92,12 @@ export class GameEngine {
   public portalWarpAnimation: number = 0;
   public shieldTimer: number = 0; // Invulnerability countdown
   public countdownTimer: number = 0; // 3-second countdown on start/restart
+  public currentSectorIndex: number = 0;
+  public highestSectorReached: number = 1;
+  public promotionBannerTimer: number = 0;
+  public promotedSectorName: string = '';
+  public graceHoles: Set<string> = new Set(); // Holes entered under active shield protection
+  public lavaFall: BallLavaFall | null = null;
 
   private generator: LevelGenerator;
   private config: GameEngineConfig;
@@ -118,10 +149,15 @@ export class GameEngine {
     this.altitudePx = 0;
     this.floorAltitudePx = -this.config.floorInitialGap;
     this.deathReason = null;
+    this.lavaFall = null;
     this.portalsUsed = 0;
     this.timeElapsed = 0;
     this.portalWarpAnimation = 0;
     this.shieldTimer = 0;
+    this.currentSectorIndex = 0;
+    this.promotionBannerTimer = 0;
+    this.promotedSectorName = '';
+    this.graceHoles.clear();
 
     // Reset level generator and generate initial obstacle buffer
     this.generator.reset(140);
@@ -192,6 +228,52 @@ export class GameEngine {
       this.shieldTimer = Math.max(0, this.shieldTimer - dt);
     }
 
+    // A. If ball is in lava plunge sequence, update falling and sinking physics
+    if (this.lavaFall) {
+      const fall = this.lavaFall;
+      const gravity = 1900; // px/s^2 downwards towards lower altitude (lava)
+
+      if (!fall.hasHitLava) {
+        // Falling through the air towards the molten lava
+        fall.vy -= gravity * dt;
+        fall.worldY += fall.vy * dt;
+        fall.worldX += fall.vx * dt;
+        fall.rotationRad += fall.rotationSpeed * dt;
+        fall.vx *= Math.pow(0.985, dt * 60);
+
+        // Pre-impact thermal incandescent glow as it nears the hot magma
+        const distToLava = fall.worldY - this.floorAltitudePx;
+        if (distToLava < 180) {
+          fall.glowIntensity = Math.min(0.85, Math.max(0, (180 - distToLava) / 180));
+        }
+
+        // Did it reach or cross the lava surface?
+        if (fall.worldY <= this.floorAltitudePx) {
+          fall.hasHitLava = true;
+          fall.lavaSplashPending = true;
+          fall.worldY = this.floorAltitudePx;
+          fall.vy = -30; // Viscous resistance in thick lava
+          fall.vx *= 0.15;
+          fall.glowIntensity = 1.0;
+        }
+      } else {
+        // Sinking into the boiling molten magma
+        fall.lavaSplashTimer += dt;
+        fall.worldY -= 35 * dt; // Slow viscous sink
+        fall.scale = Math.max(0.08, 1 - (fall.lavaSplashTimer / 0.85) * 0.75);
+        fall.glowIntensity = 1.0;
+
+        // Lava floor continues slight bubbling/rising
+        this.floorAltitudePx += this.config.floorBaseSpeed * 0.25 * dt;
+
+        if (fall.lavaSplashTimer >= 0.85) {
+          this.triggerDeath(this.deathReason ?? 'RISING_FLOOR');
+          return;
+        }
+      }
+      return;
+    }
+
     // 1. Ascent progression (unless falling into a hole)
     if (!this.ball.isFalling) {
       const currentMeters = this.altitudePx / this.config.pixelsPerMeter;
@@ -210,25 +292,52 @@ export class GameEngine {
         speedMultiplier;
       this.floorAltitudePx += floorSpeed * dt;
 
-      // Rising floor death condition: floor catches up to bar
+      // Rising floor death condition: floor catches up to bar -> consume into lava!
       if (this.floorAltitudePx >= this.altitudePx) {
-        this.triggerDeath('RISING_FLOOR');
+        this.startLavaFall('RISING_FLOOR');
         return;
       }
+
+      // Track Sector Level progression
+      const activeSector = getSectorForAltitude(currentMeters);
+      if (activeSector.index > this.currentSectorIndex) {
+        this.currentSectorIndex = activeSector.index;
+        if (activeSector.levelNumber > this.highestSectorReached) {
+          this.highestSectorReached = activeSector.levelNumber;
+          this.promotionBannerTimer = 3.5;
+          this.promotedSectorName = activeSector.name;
+          this.shieldTimer = Math.max(this.shieldTimer, 2.5); // Bonus shield protection on stage promotion
+        }
+      }
+    }
+
+    if (this.promotionBannerTimer > 0) {
+      this.promotionBannerTimer = Math.max(0, this.promotionBannerTimer - dt);
     }
 
     // 3. Populate obstacle rows ahead
     this.rows = this.generator.generateUpTo(this.altitudePx + 1200, this.rows);
 
-    // Prune rows far below rising floor
-    this.rows = this.rows.filter((r) => r.worldY > this.floorAltitudePx - 200);
+    // In-place zero-allocation row pruning from front of sorted row array
+    const cutoffY = this.floorAltitudePx - 200;
+    while (this.rows.length > 0 && this.rows[0].worldY <= cutoffY) {
+      this.rows.shift();
+    }
 
     // 4. Update ball rolling physics
-    updateBallPhysics(this.ball, this.bar, this.config.physicsConfig, dt);
+    const collision = updateBallPhysics(this.ball, this.bar, this.config.physicsConfig, dt);
 
-    // Check if falling animation finished
-    if (this.ball.isFalling && this.ball.fallProgress >= 1) {
-      this.triggerDeath('HOLE_FALL');
+    if (collision.type === 'EDGE_FALL') {
+      const isLeft = collision.edge === 'LEFT';
+      const cosTheta = Math.cos(this.bar.angleRad);
+      const sinTheta = Math.sin(this.bar.angleRad);
+      const edgeX = isLeft ? 0 : this.config.barWidth;
+      const s = edgeX - this.config.barWidth / 2;
+      const ballOffsetNormal = -(this.config.barHeight / 2 + this.ball.radius);
+      const edgeWorldX = this.config.barWidth / 2 + s * cosTheta - ballOffsetNormal * sinTheta;
+      const edgeWorldY = this.altitudePx - s * sinTheta - ballOffsetNormal * cosTheta;
+
+      this.startLavaFall('EDGE_FALL', edgeWorldX, edgeWorldY, isLeft ? -110 : 110, -60);
       return;
     }
 
@@ -236,6 +345,49 @@ export class GameEngine {
     if (!this.ball.isFalling) {
       this.check2DObstacleCollisions();
     }
+  }
+
+  /**
+   * Initiates realistic free-fall of the ball into the bubbling molten lava below.
+   */
+  public startLavaFall(
+    reason: DeathReason,
+    startWorldX?: number,
+    startWorldY?: number,
+    initialVx: number = 0,
+    initialVy: number = -60
+  ): void {
+    if (this.lavaFall) return;
+
+    const s = this.ball.x - this.config.barWidth / 2;
+    const cosTheta = Math.cos(this.bar.angleRad);
+    const sinTheta = Math.sin(this.bar.angleRad);
+    const ballOffsetNormal = -(this.config.barHeight / 2 + this.ball.radius);
+
+    const defaultWorldX = this.config.barWidth / 2 + s * cosTheta - ballOffsetNormal * sinTheta;
+    const defaultWorldY = this.altitudePx - s * sinTheta - ballOffsetNormal * cosTheta;
+
+    const wx = startWorldX ?? defaultWorldX;
+    const wy = startWorldY ?? defaultWorldY;
+
+    this.deathReason = reason;
+    this.ball.isFalling = true;
+
+    const isAlreadyAtLava = wy <= this.floorAltitudePx + 8;
+
+    this.lavaFall = {
+      worldX: wx,
+      worldY: wy,
+      vx: initialVx || this.ball.velocity * cosTheta * 0.35,
+      vy: isAlreadyAtLava ? -25 : initialVy,
+      rotationRad: this.ball.rotationRad,
+      rotationSpeed: this.ball.velocity / (this.ball.radius || 10),
+      hasHitLava: isAlreadyAtLava,
+      lavaSplashPending: isAlreadyAtLava,
+      lavaSplashTimer: 0,
+      scale: 1,
+      glowIntensity: isAlreadyAtLava ? 0.7 : 0,
+    };
   }
 
   /**
@@ -252,8 +404,13 @@ export class GameEngine {
     const ballWorldX = this.config.barWidth / 2 + s * cosTheta - ballOffsetNormal * sinTheta;
     const ballWorldY = this.altitudePx - s * sinTheta - ballOffsetNormal * cosTheta;
 
-    // Check all obstacle rows within reach
+    let isCurrentlyOverHole = false;
+
+    // Check only adjacent obstacle rows within reach (fast early-out on sorted array)
     for (const row of this.rows) {
+      if (row.worldY < ballWorldY - 34) continue; // Below reach
+      if (row.worldY > ballWorldY + 34) break; // Sorted array: all subsequent rows are higher, stop early!
+
       const deltaY = ballWorldY - row.worldY;
       if (Math.abs(deltaY) > 32) continue; // Not vertically near this row
 
@@ -273,25 +430,36 @@ export class GameEngine {
 
         // If ball touches ANY part of the colored area:
         if (distSq <= 1.0) {
+          isCurrentlyOverHole = true;
+          const holeKey = `${row.id}-${slot.slotIndex}`;
+
           if (slot.isPortal) {
             this.triggerPortalWarp();
             return;
           } else {
             // Deadly hole: check if invulnerability shield is active
             if (this.shieldTimer > 0) {
-              // Protected by warp shield!
+              // Add to grace holes so ball safely completes crossing even if timer expires mid-hole
+              this.graceHoles.add(holeKey);
               return;
             }
 
-            // Ball drops into hole with suck-in animation
-            this.ball.isFalling = true;
-            this.ball.fallProgress = 0;
-            this.ball.fallTargetX = holeCenterX;
-            this.ball.fallTargetY = row.worldY;
+            // Was this hole entered under active shield protection? (Grace clearance)
+            if (this.graceHoles.has(holeKey)) {
+              return;
+            }
+
+            // Ball drops through the hazard pit and plummets into the molten lava below!
+            this.startLavaFall('HOLE_FALL', holeCenterX, row.worldY, this.ball.velocity * 0.35, -140);
             return;
           }
         }
       }
+    }
+
+    // Ball is clear of all holes; reset grace tracking
+    if (!isCurrentlyOverHole && this.graceHoles.size > 0) {
+      this.graceHoles.clear();
     }
   }
 
@@ -304,22 +472,34 @@ export class GameEngine {
     const warpDistance = 350; // +7m
     const targetAltitude = this.altitudePx + warpDistance;
 
-    // Guarantee a safe landing zone without holes
-    this.generator.addSafeZone(targetAltitude, 100);
+    // Guarantee a generous safe landing zone without holes
+    this.generator.addSafeZone(targetAltitude, 180);
 
     this.altitudePx = targetAltitude;
     this.bar.worldY = this.altitudePx;
     this.portalsUsed++;
     this.portalWarpAnimation = 0.7; // Visual flash burst
-    this.shieldTimer = 2.0; // 2 seconds of invulnerability shield after warp!
+    this.shieldTimer = 3.5; // Generous 3.5s shield after warp!
 
     // Reset ball velocity for stable re-entry
     this.ball.velocity = 0;
   }
 
   public get stats(): GameStats {
+    const altitudeMeters = Math.floor(this.altitudePx / this.config.pixelsPerMeter);
+    const sector = getSectorForAltitude(altitudeMeters);
+    const sectorSpan = sector.maxAltitudeMeters - sector.minAltitudeMeters;
+    const sectorProgress =
+      Number.isFinite(sectorSpan) && sectorSpan > 0
+        ? Math.min(1, Math.max(0, (altitudeMeters - sector.minAltitudeMeters) / sectorSpan))
+        : 1;
+    const nextGateAltitudeMeters = Number.isFinite(sector.maxAltitudeMeters)
+      ? sector.maxAltitudeMeters
+      : altitudeMeters;
+    const metersToNextGate = Math.max(0, nextGateAltitudeMeters - altitudeMeters);
+
     return {
-      altitudeMeters: Math.floor(this.altitudePx / this.config.pixelsPerMeter),
+      altitudeMeters,
       bestAltitudeMeters: Math.floor(this.bestAltitudePx / this.config.pixelsPerMeter),
       deathReason: this.deathReason,
       portalsUsed: this.portalsUsed,
@@ -328,6 +508,16 @@ export class GameEngine {
       isShieldActive: this.shieldTimer > 0,
       countdownTimer: this.countdownTimer,
       countdownSeconds: Math.ceil(this.countdownTimer),
+      sectorIndex: sector.index,
+      sectorLevel: sector.levelNumber,
+      sectorName: sector.name,
+      sectorCode: sector.sectorCode,
+      sectorProgress,
+      nextGateAltitudeMeters,
+      metersToNextGate,
+      highestSectorReached: this.highestSectorReached,
+      promotionBannerTimer: this.promotionBannerTimer,
+      promotedSectorName: this.promotedSectorName,
     };
   }
 
