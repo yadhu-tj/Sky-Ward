@@ -1,0 +1,8 @@
+{
+  "name": "Skyward Roll",
+  "description": "Retro arcade motion-controlled ball rolling game using MediaPipe hand tracking and tilt physics.",
+  "prompt": "Skyward Roll - Retro arcade motion-controlled game with hand tracking",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

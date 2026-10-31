@@ -89,15 +89,24 @@ function App() {
     };
   }, []);
 
+  const keyboardAngleRadRef = useRef<number | null>(null);
+  const pressedKeysRef = useRef<Set<string>>(new Set());
+
   // Keyboard controls (Arrow keys for tilt, Space/P for pause, C to quick re-lock stance)
   useEffect(() => {
+    const syncKeyboardAngle = () => {
+      const left = pressedKeysRef.current.has('ArrowLeft');
+      const right = pressedKeysRef.current.has('ArrowRight');
+      const nextAngle = left && !right ? -0.28 : right && !left ? 0.28 : 0;
+      keyboardAngleRadRef.current = nextAngle;
+      setKeyboardAngleRad(nextAngle);
+      engineRef.current.setTiltAngle(nextAngle);
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') {
-        setKeyboardAngleRad(-0.28); // ~-16 deg
-        engineRef.current.setTiltAngle(-0.28);
-      } else if (e.key === 'ArrowRight') {
-        setKeyboardAngleRad(0.28); // ~+16 deg
-        engineRef.current.setTiltAngle(0.28);
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        pressedKeysRef.current.add(e.key);
+        syncKeyboardAngle();
       } else if (e.code === 'Space' || e.key.toLowerCase() === 'p') {
         e.preventDefault();
         engineRef.current.togglePause();
@@ -117,8 +126,8 @@ function App() {
 
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        setKeyboardAngleRad(0);
-        engineRef.current.setTiltAngle(0);
+        pressedKeysRef.current.delete(e.key);
+        syncKeyboardAngle();
       }
     };
 
@@ -137,14 +146,19 @@ function App() {
     const nextState = pipelineRef.current.process(landmarks, isOpenPalm);
 
     // Sync tilt directly to engine at full 60fps with zero React overhead
-    if (keyboardAngleRad === null || keyboardAngleRad === 0) {
+    if (!keyboardAngleRadRef.current) {
       engineRef.current.setTiltAngle(nextState.finalAngleRad);
     }
 
-    // Palm pause ONLY triggers if the game is actively PLAYING!
-    if (nextState.palmPauseTriggered && engineRef.current.state === 'PLAYING') {
-      pipelineRef.current.lockoutPauseGesture(60);
-      engineRef.current.pause();
+    // Two-way Open Palm gesture: pauses when PLAYING and resumes when PAUSED!
+    if (nextState.palmPauseTriggered) {
+      if (engineRef.current.state === 'PLAYING') {
+        pipelineRef.current.lockoutPauseGesture(60);
+        engineRef.current.pause();
+      } else if (engineRef.current.state === 'PAUSED') {
+        pipelineRef.current.lockoutPauseGesture(75);
+        engineRef.current.resume();
+      }
     }
 
     // Throttle React state updates to ~20fps (50ms) unless key lifecycle states change
@@ -155,19 +169,20 @@ function App() {
       nextState.isCalibrating !== prev.isCalibrating ||
       nextState.isHandTrackingActive !== prev.isHandTrackingActive ||
       nextState.hasBothHands !== prev.hasBothHands ||
-      nextState.isHandLockActive !== prev.isHandLockActive;
+      nextState.isHandLockActive !== prev.isHandLockActive ||
+      nextState.isOpenPalm !== prev.isOpenPalm;
 
     if (isStateTransition || now - lastDebugTimeRef.current >= 50) {
       lastDebugTimeRef.current = now;
       lastDebugStateRef.current = nextState;
       setDebugState(nextState);
     }
-  }, [keyboardAngleRad]);
+  }, []);
 
   const handleResetCalibration = useCallback(() => {
     pipelineRef.current.resetCalibration();
     const resetState: TiltDebugState = {
-      ...debugState,
+      ...lastDebugStateRef.current,
       isCalibrating: true,
       isCalibrated: false,
       isHandLockActive: false,
@@ -184,12 +199,12 @@ function App() {
     };
     lastDebugStateRef.current = resetState;
     setDebugState(resetState);
-  }, [debugState]);
+  }, []);
 
   const handleSkipCalibration = useCallback(() => {
     pipelineRef.current.skipCalibration();
     const skipState: TiltDebugState = {
-      ...debugState,
+      ...lastDebugStateRef.current,
       isCalibrated: true,
       isCalibrating: false,
       isHandLockActive: true,
@@ -199,7 +214,7 @@ function App() {
     };
     lastDebugStateRef.current = skipState;
     setDebugState(skipState);
-  }, [debugState]);
+  }, []);
 
   const handleStartGame = useCallback(() => {
     pipelineRef.current.resetCalibration(); // Calibrate fresh during 3-second countdown!
@@ -210,17 +225,19 @@ function App() {
   const handleSkipCalibrationAndStart = useCallback(() => {
     pipelineRef.current.skipCalibration();
     pipelineRef.current.lockoutPauseGesture(130);
-    const skipState = {
-      ...debugState,
+    const skipState: TiltDebugState = {
+      ...lastDebugStateRef.current,
       isCalibrated: true,
       isCalibrating: false,
+      isHandLockActive: true,
       calibrationProgress: 1,
       neutralOffsetDeg: 0,
+      handLockStatus: 'LOCKED',
     };
     lastDebugStateRef.current = skipState;
     setDebugState(skipState);
     engineRef.current.startGame();
-  }, [debugState]);
+  }, []);
 
   const handleRestart = useCallback(() => {
     pipelineRef.current.resetCalibration(); // Calibrate fresh during 3-second countdown!

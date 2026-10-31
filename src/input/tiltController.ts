@@ -140,7 +140,7 @@ export function calculateRawTilt(
 /**
  * Calibration Hand Lock Engine:
  * Samples baseline neutral angles AND locks physical spatial anchors (Left Anchor, Right Anchor, Baseline Y).
- * Calibration requires BOTH hands present to ensure a genuine balanced steering posture is locked.
+ * Calibration requires BOTH real hands present, held reasonably level and steady.
  */
 export class Calibrator {
   private targetFrames: number;
@@ -150,6 +150,7 @@ export class Calibrator {
   private sumLeftY: number = 0;
   private sumRightX: number = 0;
   private sumRightY: number = 0;
+  private lastSampleAngleDeg: number | null = null;
 
   private lockData: CalibrationLockData | null = null;
   private complete: boolean = false;
@@ -165,12 +166,13 @@ export class Calibrator {
     this.sumLeftY = 0;
     this.sumRightX = 0;
     this.sumRightY = 0;
+    this.lastSampleAngleDeg = null;
     this.lockData = null;
     this.complete = false;
   }
 
   public skip(): void {
-    if (this.sampleCount > 0) {
+    if (this.sampleCount >= 8) {
       const avgLX = this.sumLeftX / this.sampleCount;
       const avgLY = this.sumLeftY / this.sampleCount;
       const avgRX = this.sumRightX / this.sampleCount;
@@ -195,8 +197,8 @@ export class Calibrator {
   }
 
   /**
-   * Samples a frame during calibration.
-   * Calibration only advances when BOTH hands are detected and separated in steering posture.
+   * Samples a live dual-hand frame during calibration.
+   * Rejects single-hand fallbacks, extreme tilts (>14 deg), or rapid hand motion (>3.5 deg/frame).
    */
   public update(
     leftHand: Landmark | null,
@@ -206,17 +208,34 @@ export class Calibrator {
     if (this.complete) return true;
     if (!leftHand || !rightHand) return false;
 
-    const leftCentroid = getPalmCentroid([leftHand]);
-    const rightCentroid = getPalmCentroid([rightHand]);
-
     // Reject tight clusters during calibration
-    if (rightCentroid.x - leftCentroid.x < 0.12) return false;
+    if (rightHand.x - leftHand.x < 0.12) return false;
 
+    // Guard 1: Hands must be held reasonably level (within ±14 degrees) to lock neutral stance
+    if (Math.abs(rawAngleDeg) > 14) {
+      this.lastSampleAngleDeg = rawAngleDeg;
+      return false;
+    }
+
+    // Guard 2: Frame-to-frame stability check — reject frames while user is actively moving hands into position
+    if (this.lastSampleAngleDeg !== null && Math.abs(rawAngleDeg - this.lastSampleAngleDeg) > 3.5) {
+      // Reset accumulated samples if hands jerked significantly so crooked transition frames aren't averaged in
+      this.sampleCount = 0;
+      this.sumAngleDeg = 0;
+      this.sumLeftX = 0;
+      this.sumLeftY = 0;
+      this.sumRightX = 0;
+      this.sumRightY = 0;
+      this.lastSampleAngleDeg = rawAngleDeg;
+      return false;
+    }
+
+    this.lastSampleAngleDeg = rawAngleDeg;
     this.sumAngleDeg += rawAngleDeg;
-    this.sumLeftX += leftCentroid.x;
-    this.sumLeftY += leftCentroid.y;
-    this.sumRightX += rightCentroid.x;
-    this.sumRightY += rightCentroid.y;
+    this.sumLeftX += leftHand.x;
+    this.sumLeftY += leftHand.y;
+    this.sumRightX += rightHand.x;
+    this.sumRightY += rightHand.y;
     this.sampleCount++;
 
     if (this.sampleCount >= this.targetFrames) {
@@ -373,13 +392,17 @@ export class TiltPipeline {
     }
 
     const lockData = this.calibrator.getLockData();
-    let raw = calculateRawTilt(landmarks, lockData);
+    const liveRaw = calculateRawTilt(landmarks, lockData);
+    // True ONLY when both physical hands are actively detected in the current live frame
+    const isLiveDualHand = Boolean(liveRaw && !liveRaw.isSingleHand);
 
-    // Tracking Grace: if hands dip or momentarily leave frame, hold & gently decay for ~350ms
+    let raw = liveRaw;
+
+    // Tracking Grace: if hands dip or momentarily leave frame AFTER calibration, hold & gently decay for ~350ms
     if (raw) {
       this.lastValidRaw = raw;
       this.graceFramesRemaining = 18;
-    } else if (this.lastValidRaw && this.graceFramesRemaining > 0) {
+    } else if (this.calibrator.isComplete && this.lastValidRaw && this.graceFramesRemaining > 0) {
       this.graceFramesRemaining--;
       raw = {
         angleRad: this.lastValidRaw.angleRad * 0.95,
@@ -390,6 +413,7 @@ export class TiltPipeline {
       this.lastValidRaw = raw;
     } else {
       this.lastValidRaw = null;
+      this.graceFramesRemaining = 0;
     }
 
     const isHandLockActive = this.calibrator.isComplete;
@@ -429,38 +453,40 @@ export class TiltPipeline {
 
     const rawAngleDeg = (raw.angleRad * 180) / Math.PI;
 
-    // Calibration phase (only advances when BOTH hands are present)
+    // Calibration phase: ONLY advances when BOTH real hands are present in the live frame!
     if (!this.calibrator.isComplete) {
-      this.calibrator.update(raw.leftHand, raw.rightHand, rawAngleDeg);
+      if (isLiveDualHand) {
+        this.calibrator.update(raw.leftHand, raw.rightHand, rawAngleDeg);
+      }
       return {
-        hasBothHands: !raw.isSingleHand,
-        leftHand: raw.leftHand,
-        rightHand: raw.rightHand,
+        hasBothHands: isLiveDualHand,
+        leftHand: landmarks.left ? raw.leftHand : null,
+        rightHand: landmarks.right ? raw.rightHand : null,
         rawAngleRad: raw.angleRad,
         rawAngleDeg,
         calibratedAngleDeg: 0,
         smoothedAngleDeg: 0,
         finalAngleDeg: 0,
         finalAngleRad: 0,
-        isCalibrating: true,
+        isCalibrating: !this.calibrator.isComplete,
         calibrationProgress: this.calibrator.progress,
-        isCalibrated: false,
+        isCalibrated: this.calibrator.isComplete,
         neutralOffsetDeg: this.calibrator.neutralOffset,
         isOpenPalm,
         palmPauseTriggered,
-        leftHandHeight: raw.leftHand.y,
-        rightHandHeight: raw.rightHand.y,
+        leftHandHeight: landmarks.left ? raw.leftHand.y : 0.5,
+        rightHandHeight: landmarks.right ? raw.rightHand.y : 0.5,
         isHandTrackingActive: true,
         isSingleHandMode: raw.isSingleHand,
-        isHandLockActive: false,
-        lockedLeftAnchor: null,
-        lockedRightAnchor: null,
-        lockedBaselineY: 0.55,
-        handLockStatus: 'LOCKING',
+        isHandLockActive: this.calibrator.isComplete,
+        lockedLeftAnchor: this.calibrator.getLockData()?.leftAnchor ?? null,
+        lockedRightAnchor: this.calibrator.getLockData()?.rightAnchor ?? null,
+        lockedBaselineY: this.calibrator.getLockData()?.baselineY ?? 0.55,
+        handLockStatus: this.calibrator.isComplete ? 'LOCKED' : 'LOCKING',
       };
     }
 
-    // Hand Lock active: Anti-Spike Protection on single-hand flicker
+    // Hand Lock active: Anti-Spike Protection on single-hand flicker & Open-Palm Pause freeze
     let calibratedDeg: number;
     let effectiveSingleHand = raw.isSingleHand;
 
@@ -469,6 +495,9 @@ export class TiltPipeline {
       calibratedDeg = rawAngleDeg - this.calibrator.neutralOffset;
       this.lastDualHandAngleDeg = calibratedDeg;
       this.singleHandDropoutCounter = 0;
+    } else if (isOpenPalm) {
+      // User is holding up a single open palm to pause/resume: freeze steering angle so ball doesn't swerve!
+      calibratedDeg = this.prevFinalDeg;
     } else {
       // One hand momentarily dropped out
       this.singleHandDropoutCounter++;
@@ -525,4 +554,3 @@ export class TiltPipeline {
     };
   }
 }
-

@@ -14,51 +14,69 @@ export interface HandLandmarks {
 }
 
 /**
- * Detects whether a set of hand landmarks represents an upright open palm facing the camera.
+ * Detects whether a set of hand landmarks represents a deliberate upright open palm ("Stop" gesture)
+ * facing the camera. Uses scale-normalized ratios so it works reliably at both desk and couch distances,
+ * while requiring thumb extension and upright palm alignment to avoid colliding with casual 1-hand steering.
  */
 export function isHandOpenPalm(hand: Landmark[] | null): boolean {
   if (!hand || hand.length < 21) return false;
 
   const wrist = hand[0];
+  const thumbTip = hand[4];
+  const indexMcp = hand[5];
   const middleMcp = hand[9];
+  const pinkyMcp = hand[17];
 
   // Euclidean distance in 2D
   const dist = (p1: Landmark, p2: Landmark) =>
     Math.hypot(p1.x - p2.x, p1.y - p2.y);
 
   // Hand must be raised off the desk/keyboard level (not resting down at the bottom margin)
-  if (wrist.y > 0.82) return false;
+  if (wrist.y > 0.85) return false;
 
-  // Hand must have significant scale in the frame (prominently shown to camera)
+  // Palm reference scale (wrist to middle knuckle) — works from ~40cm desk to ~2m couch distance
   const palmScale = dist(wrist, middleMcp);
-  if (palmScale < 0.10) return false;
+  if (palmScale < 0.045) return false;
 
-  // Vertical elevation check: middle fingertip must be significantly higher than the wrist
+  // Palm must be held upright (not sideways/tilted in a steering motion)
+  if (Math.abs(wrist.x - middleMcp.x) > palmScale * 0.55) {
+    return false;
+  }
+
+  // Normalized vertical elevation check: middle fingertip must be well above wrist
   const middleTip = hand[12];
-  if (wrist.y - middleTip.y < 0.14) {
-    return false; // Hand is tilted flat, horizontal, or pointing down towards keyboard
+  if (wrist.y - middleTip.y < palmScale * 1.45) {
+    return false;
+  }
+
+  // Thumb must be extended outward (open stop-sign palm), not tucked in
+  const thumbToMiddleMcp = dist(thumbTip, middleMcp);
+  const palmWidth = dist(indexMcp, pinkyMcp);
+  if (thumbToMiddleMcp < Math.max(palmScale * 0.62, palmWidth * 0.85)) {
+    return false;
   }
 
   const fingerIndices = [
-    { mcp: 5, tip: 8 },   // Index
-    { mcp: 9, tip: 12 },  // Middle
-    { mcp: 13, tip: 16 }, // Ring
-    { mcp: 17, tip: 20 }, // Pinky
+    { mcp: 5, pip: 6, tip: 8 },   // Index
+    { mcp: 9, pip: 10, tip: 12 }, // Middle
+    { mcp: 13, pip: 14, tip: 16 }, // Ring
+    { mcp: 17, pip: 18, tip: 20 }, // Pinky
   ];
 
-  for (const { mcp, tip } of fingerIndices) {
+  for (const { mcp, pip, tip } of fingerIndices) {
     const mcpPt = hand[mcp];
+    const pipPt = hand[pip];
     const tipPt = hand[tip];
 
-    // In screen coordinates (y=0 top), fingertip must be higher than MCP joint
-    if (tipPt.y >= mcpPt.y) {
+    // In screen coordinates (y=0 top), fingertip must be higher than PIP and MCP joints
+    if (tipPt.y >= pipPt.y || pipPt.y >= mcpPt.y) {
       return false;
     }
 
     // Extended finger: distance from wrist to tip must be significantly larger than wrist to MCP
     const distMcp = dist(wrist, mcpPt);
     const distTip = dist(wrist, tipPt);
-    if (distTip < distMcp * 1.35) {
+    if (distTip < distMcp * 1.42) {
       return false;
     }
   }
@@ -112,12 +130,19 @@ export function getPalmCentroid(landmarks: Landmark[] | null): { x: number; y: n
   };
 }
 
-export function useMediaPipeHands() {
+export function useMediaPipeHands(
+  onFrame?: (landmarks: HandLandmarks, isOpenPalm: boolean) => void
+) {
   const [landmarks, setLandmarks] = useState<HandLandmarks>({ left: null, right: null });
   const [isOpenPalm, setIsOpenPalm] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+
+  const onFrameRef = useRef(onFrame);
+  useEffect(() => {
+    onFrameRef.current = onFrame;
+  }, [onFrame]);
 
   const handsRef = useRef<Hands | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -174,11 +199,17 @@ export function useMediaPipeHands() {
           }));
 
           const hd = rawHandedness[i];
+          // MediaPipe assumes selfie-mirrored input when classifying handedness;
+          // since our raw video element is un-mirrored, invert the label to match the user's physical hand.
+          const rawLabel = hd?.label;
+          const physicalLabel: 'Left' | 'Right' | null =
+            rawLabel === 'Left' ? 'Right' : rawLabel === 'Right' ? 'Left' : null;
+
           const centroid = getPalmCentroid(mapped);
           candidates.push({
             landmarks: mapped,
             centroid,
-            label: hd?.label ?? null,
+            label: physicalLabel,
             score: hd?.score ?? 0,
           });
         }
@@ -207,7 +238,7 @@ export function useMediaPipeHands() {
             const distRight = Math.hypot(cand.centroid.x - lastRight.x, cand.centroid.y - lastRight.y);
             isLeftCandidate = !(distRight < 0.28 || cand.centroid.x > 0.45);
           } else {
-            // Priority 2: Use MediaPipe's deep anatomical handedness classifier (if confidence >= 0.70)
+            // Priority 2: Use corrected anatomical handedness classifier (if confidence >= 0.70)
             if (cand.label && cand.score >= 0.70) {
               isLeftCandidate = cand.label === 'Left';
             } else {
@@ -287,8 +318,14 @@ export function useMediaPipeHands() {
         const isSingleHand = (left !== null && right === null) || (left === null && right !== null);
         const palmDetected = isSingleHand && (isHandOpenPalm(left) || isHandOpenPalm(right));
 
-        setLandmarks({ left, right });
-        setIsOpenPalm(palmDetected);
+        const nextLandmarks: HandLandmarks = { left, right };
+        if (onFrameRef.current) {
+          // Zero-latency direct callback path (avoids 30fps React state + effect hop)
+          onFrameRef.current(nextLandmarks, palmDetected);
+        } else {
+          setLandmarks(nextLandmarks);
+          setIsOpenPalm(palmDetected);
+        }
       });
 
       handsRef.current = hands;
