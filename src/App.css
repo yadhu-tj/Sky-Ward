@@ -231,6 +231,16 @@ body,
   transform: translateY(-1px);
 }
 
+.header-btn-music {
+  background: linear-gradient(180deg, #d946ef 0%, #a21caf 100%);
+  box-shadow: 0 3px 0 #86198f, 0 4px 8px rgba(217, 70, 239, 0.35);
+}
+
+.header-btn-music:hover {
+  background: linear-gradient(180deg, #e879f9 0%, #c026d3 100%);
+  transform: translateY(-1px);
+}
+
 .header-btn-fullscreen {
   background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
   box-shadow: 0 3px 0 #075985, 0 4px 8px rgba(2, 132, 199, 0.35);

@@ -58,6 +58,8 @@ export const GameCanvas = React.memo<GameCanvasProps>(
     const lastBallXRef = useRef<number>(engine.ball.x);
     const shakeRef = useRef<number>(0);
     const splashImpactRef = useRef<{ x: number; timer: number } | null>(null);
+    const isHandTrackingActiveRef = useRef<boolean>(isHandTrackingActive);
+    isHandTrackingActiveRef.current = isHandTrackingActive;
 
     // Persistent organic lava bubbles across playfield
     const lavaBubblesRef = useRef<LavaBubble[]>([
@@ -853,13 +855,14 @@ export const GameCanvas = React.memo<GameCanvasProps>(
         const gripLeftY = barCenterY - barHalfWidth * sinAngle;
         const gripRightY = barCenterY + barHalfWidth * sinAngle;
 
+        const trackingActive = isHandTrackingActiveRef.current;
         ctx.save();
         // Left Hand Rail Grip (Cyan Aura)
         ctx.fillStyle = '#00f3ff';
         ctx.shadowColor = '#00f3ff';
-        ctx.shadowBlur = isHandTrackingActive ? 14 : 6;
+        ctx.shadowBlur = trackingActive ? 14 : 6;
         ctx.beginPath();
-        ctx.arc(playfieldLeft - 7, gripLeftY, isHandTrackingActive ? 9 : 7, 0, Math.PI * 2);
+        ctx.arc(playfieldLeft - 7, gripLeftY, trackingActive ? 9 : 7, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = '#ffffff';
@@ -870,9 +873,9 @@ export const GameCanvas = React.memo<GameCanvasProps>(
         // Right Hand Rail Grip (Pink Aura)
         ctx.fillStyle = '#ff007f';
         ctx.shadowColor = '#ff007f';
-        ctx.shadowBlur = isHandTrackingActive ? 14 : 6;
+        ctx.shadowBlur = trackingActive ? 14 : 6;
         ctx.beginPath();
-        ctx.arc(playfieldLeft + barWidth + 7, gripRightY, isHandTrackingActive ? 9 : 7, 0, Math.PI * 2);
+        ctx.arc(playfieldLeft + barWidth + 7, gripRightY, trackingActive ? 9 : 7, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = '#ffffff';
@@ -1773,6 +1776,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
     }
     return (
       prev.isCalibrated === next.isCalibrated &&
+      prev.isHandLockActive === next.isHandLockActive &&
       prev.engine === next.engine &&
       prev.onStartGame === next.onStartGame &&
       prev.onSkipCalibrationAndStart === next.onSkipCalibrationAndStart &&

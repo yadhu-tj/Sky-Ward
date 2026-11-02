@@ -9,6 +9,7 @@ import { LandscapeCockpit } from './components/LandscapeCockpit';
 import { HowToPlayModal } from './components/HowToPlayModal';
 import { CameraPermissionModal } from './components/CameraPermissionModal';
 import { soundEffects } from './game/soundEffects';
+import { backgroundMusic } from './game/backgroundMusic';
 import './App.css';
 
 const INITIAL_DEBUG_STATE: TiltDebugState = {
@@ -199,17 +200,69 @@ function App() {
 
   const [isCameraModalOpen, setIsCameraModalOpen] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(() => soundEffects.isMuted());
+  const [isMusicMuted, setIsMusicMuted] = useState<boolean>(() => backgroundMusic.isMuted());
 
   const handleToggleMute = useCallback(() => {
     const nextMuted = soundEffects.toggleMute();
     setIsMuted(nextMuted);
   }, []);
 
+  const handleToggleMusic = useCallback(() => {
+    const nextMusicMuted = backgroundMusic.toggleMute();
+    setIsMusicMuted(nextMusicMuted);
+  }, []);
+
+  // Unlock audio & start background music on first user interaction anywhere
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      backgroundMusic.start();
+      window.removeEventListener('pointerdown', handleFirstInteraction);
+      window.removeEventListener('keydown', handleFirstInteraction);
+    };
+
+    window.addEventListener('pointerdown', handleFirstInteraction, { passive: true });
+    window.addEventListener('keydown', handleFirstInteraction, { passive: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', handleFirstInteraction);
+      window.removeEventListener('keydown', handleFirstInteraction);
+    };
+  }, []);
+
+  // Keep background music mode synced with engine state
+  useEffect(() => {
+    if (engineState === 'PLAYING' || engineState === 'COUNTDOWN') {
+      backgroundMusic.setMode('PLAYING');
+    } else if (engineState === 'PAUSED') {
+      backgroundMusic.setMode('PAUSED');
+    } else if (engineState === 'GAME_OVER') {
+      backgroundMusic.setMode('GAME_OVER');
+    } else {
+      backgroundMusic.setMode('MENU');
+    }
+  }, [engineState]);
+
+  // Monitor lava gap during gameplay to trigger high-adrenaline music urgency
+  useEffect(() => {
+    const urgencyInterval = setInterval(() => {
+      if (engineRef.current.state === 'PLAYING') {
+        const gapMeters = engineRef.current.floorGap / 50;
+        backgroundMusic.setLavaUrgency(gapMeters < 3.5);
+      } else {
+        backgroundMusic.setLavaUrgency(false);
+      }
+    }, 200);
+
+    return () => clearInterval(urgencyInterval);
+  }, []);
+
   const handleCloseCameraModal = useCallback(() => {
+    backgroundMusic.start();
     setIsCameraModalOpen(false);
   }, []);
 
   const handleContinueKeyboard = useCallback(() => {
+    backgroundMusic.start();
     setIsCameraModalOpen(false);
   }, []);
 
@@ -270,12 +323,14 @@ function App() {
   }, []);
 
   const handleStartGame = useCallback(() => {
+    backgroundMusic.start();
     pipelineRef.current.resetCalibration(); // Calibrate fresh during 3-second countdown!
     pipelineRef.current.lockoutPauseGesture(130); // ~4.3s lockout covering countdown + early climb
     engineRef.current.startGame();
   }, []);
 
   const handleSkipCalibrationAndStart = useCallback(() => {
+    backgroundMusic.start();
     pipelineRef.current.skipCalibration();
     pipelineRef.current.lockoutPauseGesture(130);
     soundEffects.playHandLock();
@@ -294,6 +349,7 @@ function App() {
   }, []);
 
   const handleRestart = useCallback(() => {
+    backgroundMusic.start();
     pipelineRef.current.resetCalibration(); // Calibrate fresh during 3-second countdown!
     pipelineRef.current.lockoutPauseGesture(130);
     engineRef.current.startGame();
@@ -451,6 +507,13 @@ function App() {
               }
             >
               {cameraActive ? '📹 CAM ACTIVE' : cameraError ? '⚠️ CAM BLOCKED' : '⚡ ENABLE CAM'}
+            </button>
+            <button
+              className={`header-btn ${isMusicMuted ? 'header-btn-cam-error' : 'header-btn-music'}`}
+              onClick={handleToggleMusic}
+              title={isMusicMuted ? 'Unmute Background Music' : 'Mute Background Music'}
+            >
+              {isMusicMuted ? '🔇 BGM OFF' : '🎵 BGM ON'}
             </button>
             <button
               className={`header-btn ${isMuted ? 'header-btn-cam-error' : 'header-btn-audio'}`}
