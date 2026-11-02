@@ -2,6 +2,7 @@ import { LevelGenerator, getSectorForAltitude } from './levelGenerator';
 import type { ChunkRow } from './levelGenerator';
 import { updateBallPhysics, DEFAULT_PHYSICS_CONFIG } from './physics';
 import type { Ball, Bar, PhysicsConfig } from './physics';
+import { soundEffects } from './soundEffects';
 
 export type GameState = 'CALIBRATING' | 'READY' | 'COUNTDOWN' | 'PLAYING' | 'PAUSED' | 'GAME_OVER';
 
@@ -19,6 +20,7 @@ export interface BallLavaFall {
   lavaSplashTimer: number; // 0 to ~0.85s after touching lava
   scale: number;           // 1 down to ~0.1 as it sinks
   glowIntensity: number;   // 0 to 1 heat glow
+  targetLavaWorldY?: number; // Target world Y where visual lava surface is located
 }
 
 export interface GameStats {
@@ -202,19 +204,28 @@ export class GameEngine {
 
     // Handle 3-second countdown before climb starts
     if (this.state === 'COUNTDOWN') {
+      const prevSec = Math.ceil(this.countdownTimer);
       this.countdownTimer = Math.max(0, this.countdownTimer - dt);
+      const nextSec = Math.ceil(this.countdownTimer);
+
+      if (nextSec < prevSec && nextSec > 0) {
+        soundEffects.playCountdownBeep(false);
+      }
+
       // Keep ball centered at rest during countdown
       this.ball.x = this.config.barWidth / 2;
       this.ball.velocity = 0;
 
       if (this.countdownTimer <= 0) {
         this.countdownTimer = 0;
+        soundEffects.playCountdownBeep(true);
         this.changeState('PLAYING');
       }
       return;
     }
 
     if (this.state !== 'PLAYING') {
+      soundEffects.stopRolling();
       return;
     }
 
@@ -242,16 +253,17 @@ export class GameEngine {
         fall.vx *= Math.pow(0.985, dt * 60);
 
         // Pre-impact thermal incandescent glow as it nears the hot magma
-        const distToLava = fall.worldY - this.floorAltitudePx;
-        if (distToLava < 180) {
-          fall.glowIntensity = Math.min(0.85, Math.max(0, (180 - distToLava) / 180));
+        const targetSurface = fall.targetLavaWorldY ?? this.floorAltitudePx;
+        const distToLava = fall.worldY - targetSurface;
+        if (distToLava < 140) {
+          fall.glowIntensity = Math.min(0.85, Math.max(0, (140 - distToLava) / 140));
         }
 
         // Did it reach or cross the lava surface?
-        if (fall.worldY <= this.floorAltitudePx) {
+        if (fall.worldY <= targetSurface) {
           fall.hasHitLava = true;
           fall.lavaSplashPending = true;
-          fall.worldY = this.floorAltitudePx;
+          fall.worldY = targetSurface;
           fall.vy = -30; // Viscous resistance in thick lava
           fall.vx *= 0.15;
           fall.glowIntensity = 1.0;
@@ -307,6 +319,7 @@ export class GameEngine {
           this.promotionBannerTimer = 3.5;
           this.promotedSectorName = activeSector.name;
           this.shieldTimer = Math.max(this.shieldTimer, 2.5); // Bonus shield protection on stage promotion
+          soundEffects.playSectorPromotion();
         }
       }
     }
@@ -327,7 +340,9 @@ export class GameEngine {
     // 4. Update ball rolling physics
     const collision = updateBallPhysics(this.ball, this.bar, this.config.physicsConfig, dt);
 
-    if (collision.type === 'EDGE_FALL') {
+    if (collision.type === 'EDGE') {
+      soundEffects.playBounce(this.ball.velocity);
+    } else if (collision.type === 'EDGE_FALL') {
       const isLeft = collision.edge === 'LEFT';
       const cosTheta = Math.cos(this.bar.angleRad);
       const sinTheta = Math.sin(this.bar.angleRad);
@@ -339,6 +354,13 @@ export class GameEngine {
 
       this.startLavaFall('EDGE_FALL', edgeWorldX, edgeWorldY, isLeft ? -110 : 110, -60);
       return;
+    }
+
+    // Dynamic mechanical ball rolling sound
+    if (!this.ball.isFalling && this.state === 'PLAYING') {
+      soundEffects.updateRolling(Math.abs(this.ball.velocity), true);
+    } else {
+      soundEffects.stopRolling();
     }
 
     // 5. Accurate 2D Hole Collision Detection based on real ball world coordinates
@@ -359,6 +381,9 @@ export class GameEngine {
   ): void {
     if (this.lavaFall) return;
 
+    soundEffects.stopRolling();
+    soundEffects.playLavaFallHiss();
+
     const s = this.ball.x - this.config.barWidth / 2;
     const cosTheta = Math.cos(this.bar.angleRad);
     const sinTheta = Math.sin(this.bar.angleRad);
@@ -373,7 +398,14 @@ export class GameEngine {
     this.deathReason = reason;
     this.ball.isFalling = true;
 
-    const isAlreadyAtLava = wy <= this.floorAltitudePx + 8;
+    const currentGap = Math.max(0, this.altitudePx - this.floorAltitudePx);
+    const gapFraction = Math.min(1, currentGap / this.config.floorInitialGap);
+    // On screen, the bar is at y=429px, and the baseline visible lava is at y=595px (diff=166px).
+    // As the floor climbs, dropDistance scales down towards 25px.
+    const dropDistance = 166 * Math.max(0.18, gapFraction);
+    const targetLavaWorldY = this.altitudePx - dropDistance;
+
+    const isAlreadyAtLava = wy <= targetLavaWorldY + 8;
 
     this.lavaFall = {
       worldX: wx,
@@ -387,6 +419,7 @@ export class GameEngine {
       lavaSplashTimer: 0,
       scale: 1,
       glowIntensity: isAlreadyAtLava ? 0.7 : 0,
+      targetLavaWorldY,
     };
   }
 
@@ -465,10 +498,13 @@ export class GameEngine {
 
   private triggerDeath(reason: DeathReason): void {
     this.deathReason = reason;
+    soundEffects.stopRolling();
+    soundEffects.playGameOver();
     this.changeState('GAME_OVER');
   }
 
   private triggerPortalWarp(): void {
+    soundEffects.playWarpPortal();
     const warpDistance = 350; // +7m
     const targetAltitude = this.altitudePx + warpDistance;
 

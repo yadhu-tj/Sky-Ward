@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GameEngine } from './GameEngine';
 import type { GameState } from './GameEngine';
+import { soundEffects } from './soundEffects';
 
 interface GameCanvasProps {
   engine: GameEngine;
@@ -23,7 +24,15 @@ interface Particle {
   radius: number;
   alpha: number;
   color: string;
-  type?: 'sparkle' | 'spark' | 'ember' | 'star' | 'splash' | 'smoke' | 'bubble' | 'ripple';
+  type?: 'sparkle' | 'spark' | 'ember' | 'star' | 'splash' | 'smoke' | 'bubble' | 'ripple' | 'lava_drop';
+}
+
+interface LavaBubble {
+  relX: number; // 0 to 1 across playfield width
+  size: number;
+  growth: number;
+  speed: number;
+  wobbleSpeed: number;
 }
 
 export const GameCanvas = React.memo<GameCanvasProps>(
@@ -48,6 +57,18 @@ export const GameCanvas = React.memo<GameCanvasProps>(
     const particlesRef = useRef<Particle[]>([]);
     const lastBallXRef = useRef<number>(engine.ball.x);
     const shakeRef = useRef<number>(0);
+    const splashImpactRef = useRef<{ x: number; timer: number } | null>(null);
+
+    // Persistent organic lava bubbles across playfield
+    const lavaBubblesRef = useRef<LavaBubble[]>([
+      { relX: 0.12, size: 7, growth: 0.2, speed: 0.55, wobbleSpeed: 2.2 },
+      { relX: 0.26, size: 9, growth: 0.7, speed: 0.45, wobbleSpeed: 1.8 },
+      { relX: 0.41, size: 6, growth: 0.4, speed: 0.70, wobbleSpeed: 2.6 },
+      { relX: 0.55, size: 8, growth: 0.8, speed: 0.50, wobbleSpeed: 2.0 },
+      { relX: 0.69, size: 10, growth: 0.1, speed: 0.40, wobbleSpeed: 1.6 },
+      { relX: 0.83, size: 7, growth: 0.5, speed: 0.60, wobbleSpeed: 2.4 },
+      { relX: 0.94, size: 5, growth: 0.3, speed: 0.75, wobbleSpeed: 2.8 },
+    ]);
 
     // Sync tilt angle to engine
     useEffect(() => {
@@ -83,37 +104,60 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           shakeRef.current = 6;
         }
 
+        const width = canvas.width;
+        const height = canvas.height;
+        const barCenterX = width / 2;
+        const barCenterY = height * 0.65;
+        const barWidth = engine.bar.width;
+        const barHalfWidth = barWidth / 2;
+        const barHeight = engine.bar.height;
+        const playfieldLeft = barCenterX - barHalfWidth;
+
+        // Visual Lava Lake calculations (always visible at bottom of playfield, rising as gap closes)
+        const currentGapPx = Math.max(0, engine.altitudePx - engine.floorAltitudePx);
+        const gapRatio = Math.min(1, currentGapPx / 380); // 1 = maximum safe distance, 0 = engulfed
+        const baselineLavaHeight = 68; // Always 68px tall active boiling magma lake at bottom
+        const maxLavaHeight = height - barCenterY; // reaches the bar when gap is 0
+        const visualLavaHeight = baselineLavaHeight + (1 - gapRatio) * (maxLavaHeight - baselineLavaHeight);
+        const visualLavaY = height - visualLavaHeight;
+
+        // Decay splash impact cavity
+        if (splashImpactRef.current) {
+          splashImpactRef.current.timer -= dt;
+          if (splashImpactRef.current.timer <= 0) {
+            splashImpactRef.current = null;
+          }
+        }
+
         if (engine.lavaFall?.lavaSplashPending) {
           engine.lavaFall.lavaSplashPending = false;
           shakeRef.current = 14; // Dramatic arcade tremor
+          soundEffects.playLavaSplash();
 
-          const curWidth = canvas.width;
-          const curHeight = canvas.height;
-          const barCenterX = curWidth / 2;
-          const barHalfWidth = engine.bar.width / 2;
-          const playfieldLeft = barCenterX - barHalfWidth;
           const splashX = playfieldLeft + engine.lavaFall.worldX;
-          const barCenterY = curHeight * 0.65;
-          const splashY = barCenterY + (engine.altitudePx - engine.floorAltitudePx);
+          const splashY = visualLavaY;
+          splashImpactRef.current = { x: splashX, timer: 0.85 };
 
-          // 1. Expanding thermal shockwave ripples on lava surface
-          for (let r = 0; r < 3; r++) {
+          // 1. Central Worthington Droplet Fountain (Large liquid droplet beads that shoot straight up, arc, and fall)
+          for (let d = 0; d < 7; d++) {
+            const dropAngle = -Math.PI / 2 + (Math.random() - 0.5) * 0.45; // Steep upward column
+            const dropSpeed = Math.random() * 200 + 260; // 260 to 460 px/s
             particlesRef.current.push({
-              x: splashX,
-              y: splashY,
-              vx: 0,
-              vy: 0,
-              radius: 10 + r * 14,
-              alpha: 0.95 - r * 0.2,
-              color: r === 0 ? '#ffffff' : r === 1 ? '#ffe600' : '#ff007f',
-              type: 'ripple',
+              x: splashX + (Math.random() - 0.5) * 8,
+              y: splashY - 3,
+              vx: Math.cos(dropAngle) * dropSpeed,
+              vy: Math.sin(dropAngle) * dropSpeed,
+              radius: Math.random() * 2.5 + 3.8, // Fat liquid droplet bead
+              alpha: 1.0,
+              color: d % 2 === 0 ? '#ffffff' : '#ffe600',
+              type: 'lava_drop',
             });
           }
 
-          // 2. High-energy molten magma eruption (36 droplets & sparks)
-          for (let i = 0; i < 36; i++) {
-            const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.5; // Upward fan
-            const speed = Math.random() * 260 + 90;
+          // 2. High-energy molten magma spray droplets (32 radial droplets)
+          for (let i = 0; i < 32; i++) {
+            const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.6; // Upward fan
+            const speed = Math.random() * 240 + 80;
             const color =
               Math.random() < 0.35
                 ? '#ffffff' // White-hot core
@@ -124,27 +168,41 @@ export const GameCanvas = React.memo<GameCanvasProps>(
                 : '#ff007f'; // Neon magenta magma
 
             particlesRef.current.push({
-              x: splashX + (Math.random() - 0.5) * 16,
-              y: splashY + (Math.random() - 0.5) * 8,
+              x: splashX + (Math.random() - 0.5) * 14,
+              y: splashY + (Math.random() - 0.5) * 4,
               vx: Math.cos(angle) * speed,
               vy: Math.sin(angle) * speed,
-              radius: Math.random() * 3.5 + 1.8,
+              radius: Math.random() * 3.2 + 1.8,
               alpha: 1.0,
               color,
               type: 'splash',
             });
           }
 
-          // 3. Sizzling steam & smoke puffs
-          for (let i = 0; i < 8; i++) {
+          // 3. Expanding thermal shockwave ripples on the lava surface
+          for (let r = 0; r < 4; r++) {
             particlesRef.current.push({
-              x: splashX + (Math.random() - 0.5) * 24,
-              y: splashY - Math.random() * 12,
+              x: splashX,
+              y: splashY,
+              vx: 0,
+              vy: 0,
+              radius: 8 + r * 12,
+              alpha: 1.0 - r * 0.2,
+              color: r === 0 ? '#ffffff' : r === 1 ? '#ffe600' : r === 2 ? '#ff5500' : '#ff007f',
+              type: 'ripple',
+            });
+          }
+
+          // 4. Sizzling steam & smoke puffs
+          for (let i = 0; i < 10; i++) {
+            particlesRef.current.push({
+              x: splashX + (Math.random() - 0.5) * 20,
+              y: splashY - Math.random() * 8,
               vx: (Math.random() - 0.5) * 35,
-              vy: -Math.random() * 50 - 20,
+              vy: -Math.random() * 55 - 20,
               radius: Math.random() * 6 + 4,
-              alpha: 0.7,
-              color: Math.random() < 0.5 ? 'rgba(255, 230, 200, 0.6)' : 'rgba(255, 0, 127, 0.4)',
+              alpha: 0.75,
+              color: Math.random() < 0.5 ? 'rgba(255, 240, 220, 0.7)' : 'rgba(255, 0, 127, 0.45)',
               type: 'smoke',
             });
           }
@@ -158,9 +216,6 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           setStats({ ...engine.stats });
           setFloorGapMeters(Math.floor(engine.floorGap / 50));
         }
-
-        const width = canvas.width;
-        const height = canvas.height;
 
         ctx.save();
 
@@ -207,14 +262,6 @@ export const GameCanvas = React.memo<GameCanvasProps>(
             ctx.stroke();
           }
         }
-
-        // Playfield dimensions
-        const barCenterX = width / 2;
-        const barCenterY = height * 0.65;
-        const barWidth = engine.bar.width;
-        const barHalfWidth = barWidth / 2;
-        const barHeight = engine.bar.height;
-        const playfieldLeft = barCenterX - barHalfWidth;
 
         // 2. Vibrant Arcade Cabinet Rails with Chasing Lights
         const drawNeonRail = (x: number) => {
@@ -429,57 +476,177 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           }
         }
 
-        // 4. Animated Bubbling Retro Arcade Lava Floor
-        const floorScreenY = barCenterY + (engine.altitudePx - engine.floorAltitudePx);
-        if (floorScreenY < height + 180) {
-          // Bubbling molten lava gradient
-          const lavaGrad = ctx.createLinearGradient(0, floorScreenY, 0, height);
-          lavaGrad.addColorStop(0, '#ffe600'); // Fiery yellow crest
-          lavaGrad.addColorStop(0.12, '#ff5500'); // Hot orange
-          lavaGrad.addColorStop(0.35, '#ff007f'); // Neon magenta magma
-          lavaGrad.addColorStop(1, '#2b001a'); // Deep dark core
+        // 4. Animated Bubbling Retro Arcade Lava Floor & Magma Lake
+        // Always active and visible at the bottom of the screen, rising as floor gap closes
+        ctx.save();
 
-          ctx.fillStyle = lavaGrad;
+        // 4a. Ambient upward heat glow radiating into cavern
+        const ambientGlowHeight = Math.min(120, height - visualLavaY + 50);
+        const ambientGrad = ctx.createLinearGradient(0, visualLavaY - ambientGlowHeight, 0, visualLavaY);
+        ambientGrad.addColorStop(0, 'rgba(255, 68, 0, 0)');
+        ambientGrad.addColorStop(0.5, 'rgba(255, 68, 0, 0.08)');
+        ambientGrad.addColorStop(1, 'rgba(255, 170, 0, 0.22)');
+        ctx.fillStyle = ambientGrad;
+        ctx.fillRect(playfieldLeft - 14, visualLavaY - ambientGlowHeight, barWidth + 28, ambientGlowHeight);
 
-          // Undulating wave crest across playfield
-          ctx.beginPath();
-          ctx.moveTo(playfieldLeft - 14, height);
-          ctx.lineTo(playfieldLeft - 14, floorScreenY);
+        // 4b. Back Layer: Deep dark viscous magma wave
+        const backLavaGrad = ctx.createLinearGradient(0, visualLavaY - 6, 0, height);
+        backLavaGrad.addColorStop(0, '#ff007f');
+        backLavaGrad.addColorStop(0.35, '#831843');
+        backLavaGrad.addColorStop(1, '#1a000d');
+        ctx.fillStyle = backLavaGrad;
+        ctx.beginPath();
+        ctx.moveTo(playfieldLeft - 14, height);
+        ctx.lineTo(playfieldLeft - 14, visualLavaY - 4);
+        for (let wx = playfieldLeft - 14; wx <= playfieldLeft + barWidth + 14; wx += 14) {
+          const backWave =
+            Math.sin(time * 0.003 + wx * 0.02) * 5 +
+            Math.sin(time * 0.007 + wx * 0.05) * 3;
+          ctx.lineTo(wx, visualLavaY - 4 + backWave);
+        }
+        ctx.lineTo(playfieldLeft + barWidth + 14, height);
+        ctx.closePath();
+        ctx.fill();
 
-          for (let wx = playfieldLeft - 14; wx <= playfieldLeft + barWidth + 14; wx += 10) {
-            const wave =
-              Math.sin(time * 0.005 + wx * 0.04) * 4 +
-              Math.sin(time * 0.009 + wx * 0.08) * 2;
-            ctx.lineTo(wx, floorScreenY + wave);
+        // 4c. Mid Layer: Hot molten orange magma body
+        const midLavaGrad = ctx.createLinearGradient(0, visualLavaY - 3, 0, height);
+        midLavaGrad.addColorStop(0, '#ff6600');
+        midLavaGrad.addColorStop(0.4, '#c2410c');
+        midLavaGrad.addColorStop(1, '#2b001a');
+        ctx.fillStyle = midLavaGrad;
+        ctx.beginPath();
+        ctx.moveTo(playfieldLeft - 14, height);
+        ctx.lineTo(playfieldLeft - 14, visualLavaY - 2);
+        for (let wx = playfieldLeft - 14; wx <= playfieldLeft + barWidth + 14; wx += 12) {
+          const midWave =
+            Math.sin(time * 0.005 + wx * 0.035) * 4.5 +
+            Math.cos(time * 0.008 + wx * 0.06) * 2.5;
+          ctx.lineTo(wx, visualLavaY - 2 + midWave);
+        }
+        ctx.lineTo(playfieldLeft + barWidth + 14, height);
+        ctx.closePath();
+        ctx.fill();
+
+        // 4d. Front Layer: Main boiling magma wave with dynamic ball impact depression
+        const frontLavaGrad = ctx.createLinearGradient(0, visualLavaY, 0, height);
+        frontLavaGrad.addColorStop(0, '#ffe600'); // Fiery incandescent crest
+        frontLavaGrad.addColorStop(0.14, '#ff5500'); // Hot molten orange
+        frontLavaGrad.addColorStop(0.45, '#ff007f'); // Neon magenta magma
+        frontLavaGrad.addColorStop(1, '#1e0012'); // Deep volcanic rock
+
+        ctx.fillStyle = frontLavaGrad;
+        ctx.beginPath();
+        ctx.moveTo(playfieldLeft - 14, height);
+        ctx.lineTo(playfieldLeft - 14, visualLavaY);
+
+        for (let wx = playfieldLeft - 14; wx <= playfieldLeft + barWidth + 14; wx += 10) {
+          // Dynamic liquid cavity if splash impact is active
+          let impactDisp = 0;
+          if (splashImpactRef.current) {
+            const dx = Math.abs(wx - splashImpactRef.current.x);
+            if (dx < 48) {
+              const weight = Math.cos((dx / 48) * (Math.PI / 2));
+              impactDisp = weight * 16 * Math.sin(splashImpactRef.current.timer * 14) * splashImpactRef.current.timer;
+            }
           }
 
-          ctx.lineTo(playfieldLeft + barWidth + 14, height);
-          ctx.closePath();
-          ctx.fill();
+          const frontWave =
+            Math.sin(time * 0.006 + wx * 0.04) * 4 +
+            Math.sin(time * 0.01 + wx * 0.08) * 2 +
+            impactDisp;
 
-          // Glowing neon crest line
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2;
-          ctx.shadowColor = '#ffe600';
-          ctx.shadowBlur = 10;
-          ctx.stroke();
-          ctx.shadowBlur = 0;
+          ctx.lineTo(wx, visualLavaY + frontWave);
+        }
 
-          // Random rising ember sparks from lava
-          if (Math.random() < 0.3) {
-            const emberX = playfieldLeft + Math.random() * barWidth;
-            particlesRef.current.push({
-              x: emberX,
-              y: floorScreenY,
-              vx: (Math.random() - 0.5) * 25,
-              vy: -Math.random() * 60 - 30,
-              radius: Math.random() * 2.5 + 1,
-              alpha: 1,
-              color: Math.random() < 0.5 ? '#ffe600' : '#ff007f',
-              type: 'ember',
-            });
+        ctx.lineTo(playfieldLeft + barWidth + 14, height);
+        ctx.closePath();
+        ctx.fill();
+
+        // 4e. Glowing neon crest line with incandescent halo
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#ffe600';
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Secondary cyan/magenta neon rim line
+        ctx.strokeStyle = 'rgba(255, 0, 127, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // 4f. Animated Bubbling Magma Pods along the surface
+        for (const bubble of lavaBubblesRef.current) {
+          bubble.growth += bubble.speed * dt;
+          if (bubble.growth >= 1.0) {
+            // Bubble popped! Spawn tiny sparks/steam and reset
+            const popX = playfieldLeft + bubble.relX * barWidth;
+            for (let s = 0; s < 3; s++) {
+              particlesRef.current.push({
+                x: popX,
+                y: visualLavaY - 2,
+                vx: (Math.random() - 0.5) * 40,
+                vy: -Math.random() * 50 - 20,
+                radius: Math.random() * 1.5 + 1,
+                alpha: 0.9,
+                color: Math.random() < 0.5 ? '#ffe600' : '#ffffff',
+                type: 'spark',
+              });
+            }
+            bubble.growth = 0;
+            bubble.relX = Math.random();
+            bubble.size = Math.random() * 5 + 5;
+            bubble.speed = Math.random() * 0.4 + 0.4;
+          }
+
+          const curRadius = bubble.size * Math.sin(bubble.growth * Math.PI);
+          if (curRadius > 1.2) {
+            const bx = playfieldLeft + bubble.relX * barWidth;
+            const surfaceWave = Math.sin(time * 0.006 + bx * 0.04) * 3;
+            const by = visualLavaY + surfaceWave - curRadius * 0.6;
+
+            const bubbleGrad = ctx.createRadialGradient(
+              bx - curRadius * 0.3,
+              by - curRadius * 0.3,
+              curRadius * 0.1,
+              bx,
+              by,
+              curRadius
+            );
+            bubbleGrad.addColorStop(0, '#ffffff');
+            bubbleGrad.addColorStop(0.4, '#ffe600');
+            bubbleGrad.addColorStop(0.85, '#ff5500');
+            bubbleGrad.addColorStop(1, '#ff007f');
+
+            ctx.fillStyle = bubbleGrad;
+            ctx.beginPath();
+            ctx.arc(bx, by, curRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Specular shiny highlight on bubble
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+            ctx.beginPath();
+            ctx.arc(bx - curRadius * 0.35, by - curRadius * 0.35, curRadius * 0.28, 0, Math.PI * 2);
+            ctx.fill();
           }
         }
+
+        // 4g. Continuous rising magma embers
+        if (Math.random() < 0.45) {
+          const emberX = playfieldLeft + Math.random() * barWidth;
+          particlesRef.current.push({
+            x: emberX,
+            y: visualLavaY - 2,
+            vx: (Math.random() - 0.5) * 35,
+            vy: -Math.random() * 70 - 40,
+            radius: Math.random() * 2.2 + 1,
+            alpha: 1,
+            color: Math.random() < 0.6 ? '#ffe600' : '#ff007f',
+            type: 'ember',
+          });
+        }
+
+        ctx.restore();
 
         // 5. Sleek Retro Arcade Tilting Bar
         ctx.save();
@@ -795,16 +962,33 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           p.x += p.vx * dt;
           p.y += p.vy * dt;
 
-          if (p.type === 'splash') {
-            p.vy += 520 * dt; // Gravity pulls splash droplets down
+          if (p.type === 'lava_drop') {
+            p.vy += 640 * dt; // Gravity pulls droplet down
+            p.alpha -= dt * 0.75;
+            // When drop lands back in lava
+            if (p.y >= visualLavaY && p.vy > 0) {
+              p.alpha = 0;
+              particlesRef.current.push({
+                x: p.x,
+                y: visualLavaY,
+                vx: 0,
+                vy: 0,
+                radius: p.radius * 2.2,
+                alpha: 0.8,
+                color: '#ffe600',
+                type: 'ripple',
+              });
+            }
+          } else if (p.type === 'splash') {
+            p.vy += 540 * dt; // Gravity pulls splash droplets down
             p.alpha -= dt * 1.2;
             p.radius = Math.max(0.5, p.radius * 0.97);
           } else if (p.type === 'smoke') {
-            p.vy -= 25 * dt; // Steam floats upwards
+            p.vy += 26 * dt; // Steam floats upwards
             p.alpha -= dt * 0.9;
             p.radius += dt * 10; // Expands outward
           } else if (p.type === 'ripple') {
-            p.radius += dt * 70; // Expands outward across lava
+            p.radius += dt * 68; // Expands outward across lava
             p.alpha -= dt * 1.5;
           } else {
             p.alpha -= dt * 1.8;
@@ -824,9 +1008,37 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           ctx.save();
           ctx.globalAlpha = Math.max(0, p.alpha);
 
-          if (p.type === 'ripple') {
+          if (p.type === 'lava_drop') {
+            // Incandescent molten droplet bead
+            const dropGrad = ctx.createRadialGradient(
+              p.x - p.radius * 0.3,
+              p.y - p.radius * 0.3,
+              p.radius * 0.1,
+              p.x,
+              p.y,
+              p.radius
+            );
+            dropGrad.addColorStop(0, '#ffffff');
+            dropGrad.addColorStop(0.35, '#ffe600');
+            dropGrad.addColorStop(0.75, '#ff5500');
+            dropGrad.addColorStop(1, '#ff007f');
+
+            ctx.fillStyle = dropGrad;
+            ctx.shadowColor = '#ffe600';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Specular drop highlight
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(p.x - p.radius * 0.3, p.y - p.radius * 0.3, p.radius * 0.28, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (p.type === 'ripple') {
             ctx.strokeStyle = p.color;
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 2.2;
             ctx.beginPath();
             ctx.ellipse(p.x, p.y, p.radius * 1.8, p.radius * 0.5, 0, 0, Math.PI * 2);
             ctx.stroke();

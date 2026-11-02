@@ -371,9 +371,35 @@ export function useMediaPipeHands(
     }
   }, []);
 
-  const startCamera = useCallback(async () => {
-    if (!videoRef.current) return;
-    if (streamRef.current) return; // already active
+  const attachStreamToVideo = useCallback(async () => {
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (video && stream && video.srcObject !== stream) {
+      video.srcObject = stream;
+      try {
+        await video.play();
+      } catch {
+        // play may be aborted if unmounted
+      }
+    }
+  }, []);
+
+  // Ensure stream stays attached if videoRef mounts or updates
+  useEffect(() => {
+    if (cameraActive && streamRef.current) {
+      attachStreamToVideo();
+    }
+  }, [cameraActive, attachStreamToVideo]);
+
+  const startCamera = useCallback(async (): Promise<boolean> => {
+    if (streamRef.current) {
+      setCameraActive(true);
+      await attachStreamToVideo();
+      if (!animFrameIdRef.current) {
+        animFrameIdRef.current = requestAnimationFrame(processFrame);
+      }
+      return true;
+    }
 
     try {
       setCameraError(null);
@@ -390,24 +416,38 @@ export function useMediaPipeHands(
 
       if (!isMountedRef.current) {
         stream.getTracks().forEach((track) => track.stop());
-        return;
+        return false;
       }
 
       streamRef.current = stream;
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
       setCameraActive(true);
+      setCameraError(null);
+      await attachStreamToVideo();
 
       // Start processing frames
-      animFrameIdRef.current = requestAnimationFrame(processFrame);
+      if (!animFrameIdRef.current) {
+        animFrameIdRef.current = requestAnimationFrame(processFrame);
+      }
+      return true;
     } catch (err: unknown) {
       console.error('Error accessing webcam:', err);
-      const message =
-        err instanceof Error ? err.message : 'Webcam access denied or unavailable.';
+      let message = 'Webcam access denied or unavailable.';
+      if (err instanceof Error) {
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          message = 'Camera permission denied. Please allow camera access in your browser.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          message = 'No camera device detected on this computer.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          message = 'Camera is already in use by another application.';
+        } else {
+          message = err.message || message;
+        }
+      }
       setCameraError(message);
       setCameraActive(false);
+      return false;
     }
-  }, [processFrame]);
+  }, [attachStreamToVideo, processFrame]);
 
   const stopCamera = useCallback(() => {
     if (animFrameIdRef.current) {

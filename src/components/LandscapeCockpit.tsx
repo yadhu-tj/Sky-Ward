@@ -13,9 +13,13 @@ interface LandscapeCockpitProps {
   onTogglePause: () => void;
   isKeyboardSteering: boolean;
   isPointerSteering?: boolean;
+  videoRef?: React.RefObject<HTMLVideoElement>;
+  cameraActive?: boolean;
+  cameraError?: string | null;
+  isCameraReady?: boolean;
+  onStartCamera?: () => Promise<boolean>;
+  onOpenCamModal?: () => void;
 }
-
-const LAVA_SEGMENTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
   state,
@@ -26,16 +30,19 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
   onTogglePause,
   isKeyboardSteering,
   isPointerSteering = false,
+  videoRef,
+  cameraActive,
+  cameraError,
+  isCameraReady,
+  onStartCamera,
+  onOpenCamModal,
 }) => {
   const [engineStats, setEngineStats] = useState<GameStats>(engine.stats);
   const [gameState, setGameState] = useState<GameState>(engine.state);
-  const [floorGapMeters, setFloorGapMeters] = useState<number>(Math.floor(engine.floorGap / 50));
 
   // Sync engine telemetry (120ms throttle)
   useEffect(() => {
     const interval = setInterval(() => {
-      const curFloor = Math.floor(engine.floorGap / 50);
-      setFloorGapMeters((prev) => (prev !== curFloor ? curFloor : prev));
       setGameState((prev) => (prev !== engine.state ? engine.state : prev));
       setEngineStats((prev) => {
         if (
@@ -72,16 +79,6 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
     ? '◀◀ ROLLING LEFT'
     : 'ROLLING RIGHT ▶▶';
 
-  // Floor / Lava hazard status
-  const isLavaCritical = floorGapMeters < 3;
-  const isLavaWarning = floorGapMeters >= 3 && floorGapMeters < 6;
-  const lavaColor = isLavaCritical ? '#ff007f' : isLavaWarning ? '#ffaa00' : '#39ff14';
-  const lavaText = isLavaCritical
-    ? '🔥 DANGER! LAVA IS CLOSE! 🔥'
-    : isLavaWarning
-    ? '⚠️ LAVA IS RISING!'
-    : '✨ SAFE CLEARANCE';
-
   // Arcade Score calculation
   const currentScore = engineStats.altitudeMeters * 10 + engineStats.portalsUsed * 50;
   const bestScore = Math.max(currentScore, engineStats.bestAltitudeMeters * 10);
@@ -94,202 +91,25 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
         height: '660px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '12px',
+        gap: '8px',
         flexShrink: 0,
         boxSizing: 'border-box',
+        overflowY: 'auto',
       }}
     >
-      {/* Headless Hand Tracker Background Hook (No camera video box on screen!) */}
-      <Webcam onLandmarks={onLandmarks} />
-
-      {/* 1. Retro Arcade Motion Deck (Zero Camera Window) */}
-      <div
-        style={{
-          background: 'linear-gradient(180deg, #160a2c 0%, #0d041c 100%)',
-          border: '2px solid #3b176d',
-          borderRadius: '16px',
-          padding: '12px 16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          boxShadow: '0 0 16px rgba(168, 85, 247, 0.15)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span
-            style={{
-              fontFamily: "'Press Start 2P', monospace",
-              fontSize: '0.60rem',
-              color: '#ffe600',
-              letterSpacing: '1px',
-              textShadow: '0 0 6px rgba(255, 230, 0, 0.5)',
-            }}
-          >
-            ★ MOTION SENSOR ★
-          </span>
-
-          <div
-            style={{
-              background: state.isHandTrackingActive
-                ? state.isHandLockActive
-                  ? 'rgba(6, 78, 59, 0.95)'
-                  : 'rgba(5, 78, 59, 0.9)'
-                : isKeyboardSteering || isPointerSteering
-                ? 'rgba(30, 58, 138, 0.9)'
-                : 'rgba(59, 23, 109, 0.9)',
-              border: `1px solid ${
-                state.isHandTrackingActive
-                  ? state.isHandLockActive
-                    ? '#34d399'
-                    : '#10b981'
-                  : isKeyboardSteering || isPointerSteering
-                  ? '#3b82f6'
-                  : '#7c3aed'
-              }`,
-              color: '#ffffff',
-              padding: '4px 10px',
-              borderRadius: '6px',
-              fontFamily: "'Press Start 2P', monospace",
-              fontSize: '0.48rem',
-              letterSpacing: '0.5px',
-              boxShadow: state.isHandTrackingActive ? '0 0 10px rgba(16, 185, 129, 0.5)' : 'none',
-            }}
-          >
-            {state.isHandTrackingActive
-              ? state.isHandLockActive
-                ? '🔒 HAND LOCK: ACTIVE'
-                : state.isCalibrating
-                ? `🔒 LOCKING: ${Math.round(state.calibrationProgress * 100)}%`
-                : state.hasBothHands
-                ? '● DUAL STEERING'
-                : '● 1-HAND STEERING'
-              : isKeyboardSteering
-              ? '⌨️ KEYBOARD'
-              : isPointerSteering
-              ? '🖱️ MOUSE'
-              : '👐 READY'}
-          </div>
-        </div>
-
-        {/* Dual Hand Node Indicators with Calibration Lock Reticles */}
-        <div
-          style={{
-            background: '#070210',
-            borderRadius: '10px',
-            border: `1px solid ${state.isHandLockActive ? '#059669' : '#3b176d'}`,
-            padding: '8px 14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            boxShadow: state.isHandLockActive ? 'inset 0 0 12px rgba(16, 185, 129, 0.15)' : 'none',
-          }}
-        >
-          {/* Left Hand Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div
-              style={{
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                background: state.leftHand ? '#00f3ff' : '#28114a',
-                boxShadow: state.leftHand ? '0 0 10px #00f3ff' : 'none',
-                border: '1px solid #00f3ff',
-                transition: 'all 0.15s ease',
-              }}
-            />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span
-                style={{
-                  fontFamily: "'Press Start 2P', monospace",
-                  fontSize: '0.50rem',
-                  color: state.leftHand ? '#00f3ff' : '#64748b',
-                }}
-              >
-                LEFT HAND
-              </span>
-              {state.isHandLockActive && state.leftHand && (
-                <span style={{ fontSize: '0.45rem', color: '#34d399', fontWeight: 600 }}>
-                  [🔒 LOCKED]
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Center laser connection line */}
-          <div
-            style={{
-              flex: 1,
-              height: '2px',
-              margin: '0 12px',
-              background: state.hasBothHands
-                ? 'linear-gradient(90deg, #00f3ff, #ffe600, #ff007f)'
-                : '#28114a',
-              boxShadow: state.hasBothHands ? '0 0 8px #ffe600' : 'none',
-              transition: 'all 0.15s ease',
-            }}
-          />
-
-          {/* Right Hand Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'right' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <span
-                style={{
-                  fontFamily: "'Press Start 2P', monospace",
-                  fontSize: '0.50rem',
-                  color: state.rightHand ? '#ff007f' : '#64748b',
-                }}
-              >
-                RIGHT HAND
-              </span>
-              {state.isHandLockActive && state.rightHand && (
-                <span style={{ fontSize: '0.45rem', color: '#34d399', fontWeight: 600 }}>
-                  [🔒 LOCKED]
-                </span>
-              )}
-            </div>
-            <div
-              style={{
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                background: state.rightHand ? '#ff007f' : '#28114a',
-                boxShadow: state.rightHand ? '0 0 10px #ff007f' : 'none',
-                border: '1px solid #ff007f',
-                transition: 'all 0.15s ease',
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Hand Status Cue */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: '0.68rem',
-            color: '#94a3b8',
-            padding: '0 4px',
-          }}
-        >
-          <span>
-            {state.isHandTrackingActive
-              ? state.isHandLockActive
-                ? '🔒 Stance locked • Press [C] to re-lock'
-                : '✨ Tilt freely in front of screen'
-              : 'Tip: Hold hands in air or move mouse'}
-          </span>
-          <span
-            style={{
-              fontFamily: "'Press Start 2P', monospace",
-              fontSize: '0.45rem',
-              color: state.isOpenPalm ? '#39ff14' : '#64748b',
-            }}
-          >
-            {state.isOpenPalm ? '✋ PALM PAUSE' : 'PALM GESTURE'}
-          </span>
-        </div>
-      </div>
+      {/* 1. Unified Always-Open Motion Sensor & Live Camera Viewfinder */}
+      <Webcam
+        onLandmarks={onLandmarks}
+        state={state}
+        isKeyboardSteering={isKeyboardSteering}
+        isPointerSteering={isPointerSteering}
+        videoRef={videoRef}
+        cameraActive={cameraActive}
+        cameraError={cameraError}
+        isReady={isCameraReady}
+        onStartCamera={onStartCamera}
+        onOpenCamModal={onOpenCamModal}
+      />
 
       {/* 2. Retro Animated Tilt-O-Meter */}
       <div
@@ -694,67 +514,6 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
           </div>
         </div>
 
-        {/* Lava / Floor Danger Meter */}
-        <div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '6px',
-            }}
-          >
-            <span
-              style={{
-                fontFamily: "'Press Start 2P', monospace",
-                fontSize: '0.52rem',
-                color: lavaColor,
-                textShadow: `0 0 8px ${lavaColor}`,
-              }}
-            >
-              {lavaText}
-            </span>
-            <span
-              style={{
-                fontFamily: "'Press Start 2P', monospace",
-                fontSize: '0.52rem',
-                color: '#ffffff',
-              }}
-            >
-              {floorGapMeters}m
-            </span>
-          </div>
-
-          {/* Segmented Retro Lava Meter */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(12, 1fr)',
-              gap: '4px',
-              height: '10px',
-              padding: '2px',
-              background: '#070210',
-              borderRadius: '4px',
-              border: '1px solid #3b176d',
-            }}
-          >
-            {LAVA_SEGMENTS.map((seg) => {
-              const isFilled = floorGapMeters >= seg;
-              const color = seg <= 3 ? '#ff007f' : seg <= 6 ? '#ffaa00' : '#39ff14';
-              return (
-                <div
-                  key={seg}
-                  style={{
-                    borderRadius: '2px',
-                    background: isFilled ? color : '#1c0e36',
-                    boxShadow: isFilled ? `0 0 6px ${color}` : 'none',
-                    transition: 'all 0.12s ease',
-                  }}
-                />
-              );
-            })}
-          </div>
-        </div>
 
         {/* Big Retro Action Buttons */}
         <div style={{ display: 'flex', gap: '10px', marginTop: '2px' }}>

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useMediaPipeHands } from './hooks/useMediaPipeHands';
 import type { HandLandmarks } from './hooks/useMediaPipeHands';
 import { TiltPipeline, DEFAULT_TILT_CONFIG } from './input/tiltController';
 import type { TiltDebugState } from './input/tiltController';
@@ -6,6 +7,8 @@ import { GameEngine } from './game/GameEngine';
 import { GameCanvas } from './game/GameCanvas';
 import { LandscapeCockpit } from './components/LandscapeCockpit';
 import { HowToPlayModal } from './components/HowToPlayModal';
+import { CameraPermissionModal } from './components/CameraPermissionModal';
+import { soundEffects } from './game/soundEffects';
 import './App.css';
 
 const INITIAL_DEBUG_STATE: TiltDebugState = {
@@ -154,11 +157,18 @@ function App() {
     if (nextState.palmPauseTriggered) {
       if (engineRef.current.state === 'PLAYING') {
         pipelineRef.current.lockoutPauseGesture(60);
+        soundEffects.playPause();
         engineRef.current.pause();
       } else if (engineRef.current.state === 'PAUSED') {
         pipelineRef.current.lockoutPauseGesture(75);
+        soundEffects.playResume();
         engineRef.current.resume();
       }
+    }
+
+    // Play cyber lock chime when stance successfully locks
+    if (nextState.isHandLockActive && !lastDebugStateRef.current.isHandLockActive) {
+      soundEffects.playHandLock();
     }
 
     // Throttle React state updates to ~20fps (50ms) unless key lifecycle states change
@@ -178,6 +188,48 @@ function App() {
       setDebugState(nextState);
     }
   }, []);
+
+  const {
+    videoRef,
+    isReady: isCameraReady,
+    cameraActive,
+    cameraError,
+    startCamera,
+  } = useMediaPipeHands(handleLandmarks);
+
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState<boolean>(true);
+  const [isMuted, setIsMuted] = useState<boolean>(() => soundEffects.isMuted());
+
+  const handleToggleMute = useCallback(() => {
+    const nextMuted = soundEffects.toggleMute();
+    setIsMuted(nextMuted);
+  }, []);
+
+  const handleCloseCameraModal = useCallback(() => {
+    setIsCameraModalOpen(false);
+  }, []);
+
+  const handleContinueKeyboard = useCallback(() => {
+    setIsCameraModalOpen(false);
+  }, []);
+
+  // Auto-start camera if permission was already granted previously in this browser
+  useEffect(() => {
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions
+        .query({ name: 'camera' as PermissionName })
+        .then((status) => {
+          if (status.state === 'granted') {
+            startCamera().then((active) => {
+              if (active) {
+                setIsCameraModalOpen(false);
+              }
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [startCamera]);
 
   const handleResetCalibration = useCallback(() => {
     pipelineRef.current.resetCalibration();
@@ -203,6 +255,7 @@ function App() {
 
   const handleSkipCalibration = useCallback(() => {
     pipelineRef.current.skipCalibration();
+    soundEffects.playHandLock();
     const skipState: TiltDebugState = {
       ...lastDebugStateRef.current,
       isCalibrated: true,
@@ -225,6 +278,7 @@ function App() {
   const handleSkipCalibrationAndStart = useCallback(() => {
     pipelineRef.current.skipCalibration();
     pipelineRef.current.lockoutPauseGesture(130);
+    soundEffects.playHandLock();
     const skipState: TiltDebugState = {
       ...lastDebugStateRef.current,
       isCalibrated: true,
@@ -248,9 +302,11 @@ function App() {
   const handleTogglePause = useCallback(() => {
     if (engineRef.current.state === 'PAUSED') {
       pipelineRef.current.lockoutPauseGesture(80); // Lockout when resuming
+      soundEffects.playResume();
       engineRef.current.resume();
     } else if (engineRef.current.state === 'PLAYING') {
       pipelineRef.current.lockoutPauseGesture(60);
+      soundEffects.playPause();
       engineRef.current.pause();
     }
   }, []);
@@ -378,6 +434,32 @@ function App() {
 
           <div className="header-actions">
             <button
+              className={`header-btn ${
+                cameraActive
+                  ? 'header-btn-cam-active'
+                  : cameraError
+                  ? 'header-btn-cam-error'
+                  : 'header-btn-cam-prompt'
+              }`}
+              onClick={() => setIsCameraModalOpen(true)}
+              title={
+                cameraActive
+                  ? 'Camera Active & Streaming'
+                  : cameraError
+                  ? 'Camera Permission Blocked - Click to fix'
+                  : 'Click to Enable Camera'
+              }
+            >
+              {cameraActive ? '📹 CAM ACTIVE' : cameraError ? '⚠️ CAM BLOCKED' : '⚡ ENABLE CAM'}
+            </button>
+            <button
+              className={`header-btn ${isMuted ? 'header-btn-cam-error' : 'header-btn-audio'}`}
+              onClick={handleToggleMute}
+              title={isMuted ? 'Unmute Sound Effects' : 'Mute Sound Effects'}
+            >
+              {isMuted ? '🔇 SFX OFF' : '🔊 SFX ON'}
+            </button>
+            <button
               className="header-btn header-btn-manual"
               onClick={handleOpenHowToPlay}
               title="Open How to Play Manual"
@@ -418,13 +500,30 @@ function App() {
             onTogglePause={handleTogglePause}
             isKeyboardSteering={keyboardAngleRad !== null && keyboardAngleRad !== 0}
             isPointerSteering={isPointerSteering}
+            videoRef={videoRef}
+            cameraActive={cameraActive}
+            cameraError={cameraError}
+            isCameraReady={isCameraReady}
+            onStartCamera={startCamera}
+            onOpenCamModal={() => setIsCameraModalOpen(true)}
           />
         </main>
       </div>
 
+      {/* Retro Arcade Camera Permission Alert Modal */}
+      <CameraPermissionModal
+        isOpen={isCameraModalOpen}
+        isReady={isCameraReady}
+        cameraActive={cameraActive}
+        cameraError={cameraError}
+        onRequestCamera={startCamera}
+        onClose={handleCloseCameraModal}
+        onContinueKeyboard={handleContinueKeyboard}
+      />
+
       {/* Retro Arcade Intro & How-To-Play Modal */}
       <HowToPlayModal
-        isOpen={isHowToPlayOpen}
+        isOpen={isHowToPlayOpen && !isCameraModalOpen}
         onClose={handleCloseHowToPlay}
         onStartGame={handleStartGame}
         onQuickPlay={handleSkipCalibrationAndStart}
