@@ -8,7 +8,6 @@ interface HowToPlayModalProps {
   onQuickPlay: () => void;
   debugState: TiltDebugState;
   isKeyboardSteering: boolean;
-  isPointerSteering: boolean;
 }
 
 export const HowToPlayModal: React.FC<HowToPlayModalProps> = React.memo(function HowToPlayModal({
@@ -18,7 +17,6 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = React.memo(function
   onQuickPlay,
   debugState,
   isKeyboardSteering,
-  isPointerSteering,
 }) {
   if (!isOpen) return null;
 
@@ -202,7 +200,7 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = React.memo(function
               </div>
             </div>
 
-            {/* Card 2: Mouse & Keyboard Alternatives */}
+            {/* Card 2: Mobile Gyro, Touch, Mouse & Keys */}
             <div
               style={{
                 background: 'rgba(17, 7, 36, 0.85)',
@@ -215,7 +213,7 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = React.memo(function
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '1.4rem' }}>🖱️</span>
+                <span style={{ fontSize: '1.4rem' }}>📱</span>
                 <span
                   style={{
                     fontFamily: "'Press Start 2P', monospace",
@@ -224,15 +222,15 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = React.memo(function
                     letterSpacing: '1px',
                   }}
                 >
-                  2. MOUSE OR ARROW KEYS
+                  2. GYRO, TOUCH OR KEYS
                 </span>
               </div>
               <div style={{ fontSize: '0.74rem', color: '#cbd5e1', lineHeight: 1.5 }}>
-                Hands tired or camera unavailable?
+                Play anywhere on phone or computer:
                 <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
-                  <li><strong>Mouse:</strong> Move cursor left/right anywhere across the screen.</li>
-                  <li><strong>Keyboard:</strong> Tap or hold <kbd>←</kbd> and <kbd>→</kbd> arrow keys.</li>
-                  <li>Webcam hands automatically take over whenever you raise them!</li>
+                  <li><strong>Mobile Gyro:</strong> Tilt your phone left/right to steer the bar directly!</li>
+                  <li><strong>Mobile Touch:</strong> Tap the on-screen Left/Right thumb pads.</li>
+                  <li><strong>Desktop:</strong> Use <kbd>←</kbd> and <kbd>→</kbd> arrow keys to tilt.</li>
                 </ul>
               </div>
             </div>
@@ -336,7 +334,7 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = React.memo(function
                   fontSize: '0.48rem',
                   color: isHandTrackingActive
                     ? '#39ff14'
-                    : isKeyboardSteering || isPointerSteering
+                    : isKeyboardSteering
                     ? '#00f3ff'
                     : '#ffaa00',
                 }}
@@ -347,8 +345,6 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = React.memo(function
                     : '● 1 HAND DETECTED'
                   : isKeyboardSteering
                   ? '⌨️ KEYBOARD'
-                  : isPointerSteering
-                  ? '🖱️ MOUSE'
                   : '👐 HOLD HANDS IN AIR'}
               </span>
             </div>

@@ -4,6 +4,8 @@ import type { HandLandmarks } from '../hooks/useMediaPipeHands';
 import type { TiltDebugState } from '../input/tiltController';
 import type { GameEngine, GameStats, GameState } from '../game/GameEngine';
 
+export type ControlMode = 'GYRO' | 'HAND_CAM' | 'TOUCH';
+
 interface LandscapeCockpitProps {
   state: TiltDebugState;
   engine: GameEngine;
@@ -12,13 +14,18 @@ interface LandscapeCockpitProps {
   onSkipCalibration: () => void;
   onTogglePause: () => void;
   isKeyboardSteering: boolean;
-  isPointerSteering?: boolean;
   videoRef?: React.RefObject<HTMLVideoElement>;
   cameraActive?: boolean;
   cameraError?: string | null;
   isCameraReady?: boolean;
   onStartCamera?: () => Promise<boolean>;
   onOpenCamModal?: () => void;
+  isMobile?: boolean;
+  controlMode?: ControlMode;
+  gyroAvailable?: boolean;
+  gyroPermissionRequired?: boolean;
+  onRequestGyroPermission?: () => Promise<boolean>;
+  onCalibrateGyro?: () => void;
 }
 
 export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
@@ -29,13 +36,18 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
   onSkipCalibration,
   onTogglePause,
   isKeyboardSteering,
-  isPointerSteering = false,
   videoRef,
   cameraActive,
   cameraError,
   isCameraReady,
   onStartCamera,
   onOpenCamModal,
+  isMobile = false,
+  controlMode = 'HAND_CAM',
+  gyroAvailable = false,
+  gyroPermissionRequired = false,
+  onRequestGyroPermission,
+  onCalibrateGyro,
 }) => {
   const [engineStats, setEngineStats] = useState<GameStats>(engine.stats);
   const [gameState, setGameState] = useState<GameState>(engine.state);
@@ -84,32 +96,149 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
   const bestScore = Math.max(currentScore, engineStats.bestAltitudeMeters * 10);
   const padScore = (n: number) => n.toString().padStart(6, '0');
 
+  // Section 1: When playing on phone, the canvas is the full screen and cockpit is hidden
+  if (isMobile && (gameState === 'PLAYING' || gameState === 'COUNTDOWN')) {
+    return null;
+  }
+
   return (
     <aside
+      className="arcade-cockpit"
       style={{
-        width: '460px',
-        height: '660px',
+        width: isMobile ? '100%' : '460px',
+        maxWidth: isMobile ? '780px' : undefined,
+        height: isMobile ? 'auto' : '660px',
         display: 'flex',
         flexDirection: 'column',
         gap: '8px',
         flexShrink: 0,
         boxSizing: 'border-box',
-        overflowY: 'auto',
+        overflowY: isMobile ? 'visible' : 'auto',
       }}
     >
-      {/* 1. Unified Always-Open Motion Sensor & Live Camera Viewfinder */}
-      <Webcam
-        onLandmarks={onLandmarks}
-        state={state}
-        isKeyboardSteering={isKeyboardSteering}
-        isPointerSteering={isPointerSteering}
-        videoRef={videoRef}
-        cameraActive={cameraActive}
-        cameraError={cameraError}
-        isReady={isCameraReady}
-        onStartCamera={onStartCamera}
-        onOpenCamModal={onOpenCamModal}
-      />
+      {/* 1. Camera Viewfinder: Active when desktop OR when mobile user chooses HAND_CAM */}
+      {(!isMobile || controlMode === 'HAND_CAM') && (
+        <Webcam
+          onLandmarks={onLandmarks}
+          state={state}
+          isKeyboardSteering={isKeyboardSteering}
+          videoRef={videoRef}
+          cameraActive={cameraActive}
+          cameraError={cameraError}
+          isReady={isCameraReady}
+          onStartCamera={onStartCamera}
+          onOpenCamModal={onOpenCamModal}
+          compact={isMobile}
+        />
+      )}
+
+      {/* Section 6: Gyroscope Quick-Calibration Box (When Gyro Mode active on mobile) */}
+      {isMobile && controlMode === 'GYRO' && (
+        <div
+          style={{
+            background: 'linear-gradient(180deg, #160a2c 0%, #0d041c 100%)',
+            border: '2px solid #059669',
+            borderRadius: '12px',
+            padding: '12px 14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            boxShadow: '0 0 12px rgba(16, 185, 129, 0.2)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: gyroAvailable ? '#39ff14' : '#f59e0b',
+                boxShadow: gyroAvailable ? '0 0 8px #39ff14' : 'none',
+              }}
+            />
+            <span
+              style={{
+                fontFamily: "'Press Start 2P', monospace",
+                fontSize: '11px',
+                color: gyroAvailable ? '#39ff14' : '#f59e0b',
+              }}
+            >
+              📱 {gyroAvailable ? 'GYRO SENSOR ACTIVE' : 'GYRO NOT DETECTED'}
+            </span>
+          </div>
+
+          <div style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: 1.3 }}>
+            Tilt phone left / right to balance the bar
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: gyroPermissionRequired ? '1fr 1fr' : '1fr',
+              gap: '8px',
+              marginTop: '4px',
+            }}
+          >
+            {gyroPermissionRequired && onRequestGyroPermission && (
+              <button
+                onClick={onRequestGyroPermission}
+                style={{
+                  height: '44px',
+                  background: 'linear-gradient(180deg, #10b981 0%, #047857 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontFamily: "'Press Start 2P', monospace",
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 0 #065f46',
+                }}
+              >
+                ⚡ PERMISSION
+              </button>
+            )}
+            {onCalibrateGyro && (
+              <button
+                onClick={onCalibrateGyro}
+                style={{
+                  height: '44px',
+                  background: 'linear-gradient(180deg, #0284c7 0%, #0369a1 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontFamily: "'Press Start 2P', monospace",
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 0 #075985',
+                }}
+                title="Hold phone at your natural resting angle and tap to zero"
+              >
+                ⚖️ ZERO LEVEL
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Section 6: Touch Mode Status Card (When Touch Mode active on mobile) */}
+      {isMobile && controlMode === 'TOUCH' && (
+        <div
+          style={{
+            background: 'linear-gradient(180deg, #160a2c 0%, #0d041c 100%)',
+            border: '2px solid #3b176d',
+            borderRadius: '12px',
+            padding: '12px 14px',
+            boxShadow: '0 0 12px rgba(168, 85, 247, 0.15)',
+          }}
+        >
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '11px', color: '#ffe600', marginBottom: '4px' }}>
+            👆 TOUCH MODE ACTIVE
+          </div>
+          <div style={{ fontSize: '13px', color: '#cbd5e1', lineHeight: 1.3 }}>
+            Touch left and right zones on screen to steer.
+          </div>
+        </div>
+      )}
 
       {/* 2. Retro Animated Tilt-O-Meter */}
       <div
@@ -151,62 +280,71 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
             </span>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {!isCalibrated && (
+          {/* Only show Skip and Re-lock in Cam mode */}
+          {(!isMobile || controlMode === 'HAND_CAM') && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {!isCalibrated && (
+                <button
+                  onClick={onSkipCalibration}
+                  style={{
+                    background: 'linear-gradient(180deg, #0284c7 0%, #0369a1 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    padding: isMobile ? '8px 12px' : '5px 10px',
+                    minHeight: isMobile ? '44px' : undefined,
+                    borderRadius: '6px',
+                    fontFamily: "'Press Start 2P', monospace",
+                    fontSize: isMobile ? '11px' : '0.52rem',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 0 #075985',
+                  }}
+                >
+                  SKIP
+                </button>
+              )}
               <button
-                onClick={onSkipCalibration}
+                onClick={onResetCalibration}
+                title="Hold hands level and click or press [C] to lock posture"
                 style={{
-                  background: 'linear-gradient(180deg, #0284c7 0%, #0369a1 100%)',
+                  background: isCalibrating
+                    ? 'linear-gradient(180deg, #ec4899 0%, #be185d 100%)'
+                    : 'linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%)',
                   color: '#ffffff',
                   border: 'none',
-                  padding: '5px 10px',
+                  padding: isMobile ? '8px 14px' : '5px 12px',
+                  minHeight: isMobile ? '44px' : undefined,
                   borderRadius: '6px',
                   fontFamily: "'Press Start 2P', monospace",
-                  fontSize: '0.52rem',
+                  fontSize: isMobile ? '11px' : '0.52rem',
                   cursor: 'pointer',
-                  boxShadow: '0 2px 0 #075985',
+                  boxShadow: isCalibrating ? '0 2px 0 #9d174d' : '0 2px 0 #5b21b6',
+                  transition: 'all 0.1s ease',
                 }}
               >
-                SKIP
+                {isCalibrating ? (hasBothHands ? 'LOCKING...' : 'WAITING...') : 'RE-LOCK [C]'}
               </button>
-            )}
-            <button
-              onClick={onResetCalibration}
-              title="Hold hands level and click or press [C] to lock posture"
-              style={{
-                background: isCalibrating
-                  ? 'linear-gradient(180deg, #ec4899 0%, #be185d 100%)'
-                  : 'linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%)',
-                color: '#ffffff',
-                border: 'none',
-                padding: '5px 12px',
-                borderRadius: '6px',
-                fontFamily: "'Press Start 2P', monospace",
-                fontSize: '0.52rem',
-                cursor: 'pointer',
-                boxShadow: isCalibrating ? '0 2px 0 #9d174d' : '0 2px 0 #5b21b6',
-                transition: 'all 0.1s ease',
-              }}
-            >
-              {isCalibrating ? (hasBothHands ? 'LOCKING...' : 'WAITING...') : 'RE-LOCK [C]'}
-            </button>
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* Calibration Progress Bar */}
+        {/* Section 7: Mode-Aware Status Label & Stance Calibration (Cam only) */}
         <div>
           <div
             style={{
               display: 'flex',
               justifyContent: 'space-between',
-              fontSize: '0.72rem',
+              fontSize: isMobile ? '13px' : '0.72rem',
               fontWeight: 600,
               color: '#94a3b8',
               marginBottom: '4px',
             }}
           >
-            <span style={{ color: isCalibrating && !hasBothHands ? '#f59e0b' : '#e2e8f0' }}>
-              {isCalibrating
+            <span style={{ color: controlMode === 'HAND_CAM' && isCalibrating && !hasBothHands ? '#f59e0b' : '#e2e8f0' }}>
+              {controlMode === 'GYRO'
+                ? 'Tilt your phone to balance'
+                : controlMode === 'TOUCH'
+                ? 'Touch left or right to steer'
+                : isCalibrating
                 ? hasBothHands
                   ? 'Hold hands level to lock stance...'
                   : 'Raise hands in camera to lock...'
@@ -214,32 +352,37 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
                 ? 'Stance locked! Press [C] anytime to re-lock'
                 : 'Click Re-Lock if needed'}
             </span>
-            <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '0.55rem' }}>
-              {Math.round(calibrationProgress * 100)}%
-            </span>
+            {(!isMobile || controlMode === 'HAND_CAM') && (
+              <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '0.55rem' }}>
+                {Math.round(calibrationProgress * 100)}%
+              </span>
+            )}
           </div>
-          <div
-            style={{
-              width: '100%',
-              height: '6px',
-              background: '#28114a',
-              borderRadius: '3px',
-              overflow: 'hidden',
-              border: '1px solid #4c1d95',
-            }}
-          >
+
+          {(!isMobile || controlMode === 'HAND_CAM') && (
             <div
               style={{
-                width: `${calibrationProgress * 100}%`,
-                height: '100%',
-                background: isCalibrated
-                  ? 'linear-gradient(90deg, #39ff14, #00f3ff)'
-                  : 'linear-gradient(90deg, #ffaa00, #ff007f)',
-                boxShadow: '0 0 8px rgba(0, 243, 255, 0.5)',
-                transition: 'width 0.12s ease-out',
+                width: '100%',
+                height: '6px',
+                background: '#28114a',
+                borderRadius: '3px',
+                overflow: 'hidden',
+                border: '1px solid #4c1d95',
               }}
-            />
-          </div>
+            >
+              <div
+                style={{
+                  width: `${calibrationProgress * 100}%`,
+                  height: '100%',
+                  background: isCalibrated
+                    ? 'linear-gradient(90deg, #39ff14, #00f3ff)'
+                    : 'linear-gradient(90deg, #ffaa00, #ff007f)',
+                  boxShadow: '0 0 8px rgba(0, 243, 255, 0.5)',
+                  transition: 'width 0.12s ease-out',
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Animated Retro Balance Meter */}
@@ -515,33 +658,35 @@ export const LandscapeCockpit: React.FC<LandscapeCockpitProps> = React.memo(({
         </div>
 
 
-        {/* Big Retro Action Buttons */}
-        <div style={{ display: 'flex', gap: '10px', marginTop: '2px' }}>
-          <button
-            onClick={onTogglePause}
-            style={{
-              flex: 1,
-              background: gameState === 'PAUSED'
-                ? 'linear-gradient(180deg, #10b981 0%, #047857 100%)'
-                : 'linear-gradient(180deg, #ec4899 0%, #be185d 100%)',
-              color: '#ffffff',
-              border: 'none',
-              padding: '10px 14px',
-              borderRadius: '8px',
-              fontFamily: "'Press Start 2P', monospace",
-              fontSize: '0.58rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              boxShadow: gameState === 'PAUSED' ? '0 3px 0 #065f46' : '0 3px 0 #9d174d',
-              transition: 'all 0.08s ease',
-            }}
-          >
-            <span>{gameState === 'PAUSED' ? '▶ RESUME' : '⏸ PAUSE'}</span>
-          </button>
-        </div>
+        {/* Big Retro Action Buttons (Desktop only - mobile has top HUD pause button during play) */}
+        {!isMobile && (
+          <div style={{ display: 'flex', gap: '10px', marginTop: '2px' }}>
+            <button
+              onClick={onTogglePause}
+              style={{
+                flex: 1,
+                background: gameState === 'PAUSED'
+                  ? 'linear-gradient(180deg, #10b981 0%, #047857 100%)'
+                  : 'linear-gradient(180deg, #ec4899 0%, #be185d 100%)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                fontFamily: "'Press Start 2P', monospace",
+                fontSize: '0.58rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: gameState === 'PAUSED' ? '0 3px 0 #065f46' : '0 3px 0 #9d174d',
+                transition: 'all 0.08s ease',
+              }}
+            >
+              <span>{gameState === 'PAUSED' ? '▶ RESUME' : '⏸ PAUSE'}</span>
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

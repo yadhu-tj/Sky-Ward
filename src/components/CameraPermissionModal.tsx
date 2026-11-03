@@ -409,7 +409,7 @@ export const CameraPermissionModal: React.FC<CameraPermissionModalProps> = React
                   e.currentTarget.style.borderColor = '#4c1d95';
                 }}
               >
-                ⌨️ PLAY WITH ARROW KEYS / MOUSE INSTEAD
+                ⌨️ PLAY WITH ARROW KEYS INSTEAD
               </button>
             </div>
           </div>

@@ -14,6 +14,18 @@ interface GameCanvasProps {
   onTogglePause: () => void;
   isHandTrackingActive?: boolean;
   onOpenHowToPlay?: () => void;
+  isMobile?: boolean;
+  controlMode?: 'GYRO' | 'HAND_CAM' | 'TOUCH';
+  onSelectControlMode?: (mode: 'GYRO' | 'HAND_CAM' | 'TOUCH') => void;
+  onCalibrateGyro?: () => void;
+  onTouchTilt?: (dir: -1 | 0 | 1) => void;
+  gyroAvailable?: boolean;
+  gyroPermissionRequired?: boolean;
+  onRequestGyroPermission?: () => void;
+  cameraActive?: boolean;
+  cameraError?: string | null;
+  onStartCamera?: () => Promise<boolean>;
+  onOpenCamModal?: () => void;
 }
 
 interface Particle {
@@ -47,6 +59,18 @@ export const GameCanvas = React.memo<GameCanvasProps>(
     onTogglePause,
     isHandTrackingActive = false,
     onOpenHowToPlay,
+    isMobile = false,
+    controlMode = 'HAND_CAM',
+    onSelectControlMode,
+    onCalibrateGyro,
+    onTouchTilt,
+    gyroAvailable = true,
+    gyroPermissionRequired = false,
+    onRequestGyroPermission,
+    cameraActive = false,
+    cameraError = null,
+    onStartCamera,
+    onOpenCamModal,
   }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [gameState, setGameState] = useState<GameState>(engine.state);
@@ -1102,11 +1126,23 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
           const guidance =
-            count === 3
-              ? 'HOLD HANDS LEVEL!'
+            controlMode === 'HAND_CAM' && cameraActive
+              ? count === 3
+                ? 'HOLD HANDS LEVEL!'
+                : count === 2
+                ? 'CENTERING STANCE...'
+                : 'GET READY TO CLIMB!'
+              : controlMode === 'GYRO'
+              ? count === 3
+                ? 'HOLD PHONE LEVEL!'
+                : count === 2
+                ? 'READY TO TILT...'
+                : 'ROLL!'
+              : count === 3
+              ? 'STEER WITH ARROW KEYS!'
               : count === 2
-              ? 'CENTERING STANCE...'
-              : 'GET READY TO CLIMB!';
+              ? 'BALANCE THE BALL...'
+              : 'ROLL!';
           ctx.fillText(guidance, width / 2, height / 2 + 50);
         }
 
@@ -1184,11 +1220,11 @@ export const GameCanvas = React.memo<GameCanvasProps>(
 
     return (
       <div
-        className="crt-overlay"
+        className="arcade-canvas-container crt-overlay game-panel"
         style={{
           position: 'relative',
-          width: '780px',
-          height: '660px',
+          width: isMobile ? '100%' : '780px',
+          height: isMobile ? '100%' : '660px',
           borderRadius: '16px',
           overflow: 'hidden',
           boxShadow: '0 0 25px rgba(168, 85, 247, 0.35)',
@@ -1197,325 +1233,662 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           flexShrink: 0,
         }}
       >
-        <canvas ref={canvasRef} width={780} height={660} style={{ display: 'block' }} />
-
-        {/* Retro Arcade Playfield HUD */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '14px',
-            left: '18px',
-            right: '18px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            pointerEvents: 'none',
-            fontFamily: "'Press Start 2P', monospace",
-            zIndex: 12,
+        <canvas
+          ref={canvasRef}
+          width={780}
+          height={660}
+          style={{ display: 'block', touchAction: 'none' }}
+          onPointerDown={(e) => {
+            if (isMobile && (gameState === 'PLAYING' || gameState === 'COUNTDOWN') && onTouchTilt) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const relX = e.clientX - rect.left;
+              onTouchTilt(relX < rect.width / 2 ? -1 : 1);
+            }
           }}
-        >
-          {/* Stage & Altitude Badge */}
+          onPointerUp={() => {
+            if (isMobile && onTouchTilt) onTouchTilt(0);
+          }}
+          onPointerCancel={() => {
+            if (isMobile && onTouchTilt) onTouchTilt(0);
+          }}
+          onPointerLeave={() => {
+            if (isMobile && onTouchTilt) onTouchTilt(0);
+          }}
+        />
+
+        {/* Desktop Retro Arcade Playfield HUD */}
+        {!isMobile && (
           <div
             style={{
-              background: 'rgba(17, 7, 36, 0.9)',
-              border: '2px solid #3b176d',
-              padding: '6px 14px',
-              borderRadius: '8px',
-              boxShadow: '0 0 10px rgba(0, 243, 255, 0.3)',
+              position: 'absolute',
+              top: '14px',
+              left: '18px',
+              right: '18px',
               display: 'flex',
-              flexDirection: 'column',
-              gap: '3px',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              pointerEvents: 'none',
+              fontFamily: "'Press Start 2P', monospace",
+              zIndex: 12,
             }}
           >
-            <div style={{ fontSize: '0.45rem', color: '#ffe600', letterSpacing: '1px' }}>
-              STAGE 0{stats.sectorLevel}: {stats.sectorName}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-              <span style={{ fontSize: '0.92rem', fontWeight: 'bold', color: '#ffffff' }}>
-                {stats.altitudeMeters}m
-              </span>
-              {stats.metersToNextGate > 0 && (
-                <span style={{ fontSize: '0.45rem', color: '#00f3ff' }}>
-                  GATE {stats.metersToNextGate}m
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Center HUD: Hand Lock Status & Shield Badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {isHandTrackingActive && (
-              <div
-                style={{
-                  background: isHandLockActive ? 'rgba(5, 78, 59, 0.92)' : 'rgba(120, 53, 15, 0.92)',
-                  border: `2px solid ${isHandLockActive ? '#10b981' : '#f59e0b'}`,
-                  padding: '5px 12px',
-                  borderRadius: '20px',
-                  color: '#ffffff',
-                  fontSize: '0.48rem',
-                  letterSpacing: '0.5px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: isHandLockActive ? '0 0 10px rgba(16, 185, 129, 0.45)' : 'none',
-                }}
-              >
-                <span>{isHandLockActive ? '🔒 HAND LOCK: ON' : '⚠️ CALIBRATING'}</span>
-                <span style={{ fontSize: '0.40rem', color: '#a7f3d0' }}>[C] RE-LOCK</span>
-              </div>
-            )}
-
-            {stats.isShieldActive && (
-              <div
-                style={{
-                  background: stats.shieldTimer < 1.2
-                    ? (Math.floor(Date.now() / 150) % 2 === 0 ? 'rgba(255, 0, 127, 0.95)' : 'rgba(255, 230, 0, 0.95)')
-                    : 'rgba(2, 132, 199, 0.9)',
-                  border: `2px solid ${stats.shieldTimer < 1.2 ? '#ffffff' : '#00f3ff'}`,
-                  padding: '6px 16px',
-                  borderRadius: '20px',
-                  color: stats.shieldTimer < 1.2 ? '#000000' : '#ffffff',
-                  fontWeight: 'bold',
-                  fontSize: '0.62rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  boxShadow: stats.shieldTimer < 1.2 ? '0 0 16px #ff007f' : '0 0 14px #00f3ff',
-                  letterSpacing: '0.5px',
-                }}
-              >
-                🛡️ {stats.shieldTimer < 1.2 ? 'EXPIRING!' : 'SHIELD'} {stats.shieldTimer.toFixed(1)}s
-              </div>
-            )}
-          </div>
-
-          {/* Lava Distance Badge */}
-          <div
-            style={{
-              background: 'rgba(17, 7, 36, 0.9)',
-              border: `2px solid ${
-                floorGapMeters < 3 ? '#ff007f' : floorGapMeters < 6 ? '#ffaa00' : '#3b176d'
-              }`,
-              padding: '6px 14px',
-              borderRadius: '8px',
-              boxShadow: floorGapMeters < 3 ? '0 0 12px rgba(255, 0, 127, 0.6)' : 'none',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '3px',
-              textAlign: 'right',
-            }}
-          >
+            {/* Stage & Altitude Badge */}
             <div
               style={{
-                fontSize: '0.45rem',
-                color: floorGapMeters < 3 ? '#ff007f' : '#ffaa00',
-              }}
-            >
-              LAVA GAP
-            </div>
-            <div
-              style={{
-                fontSize: '0.92rem',
-                fontWeight: 'bold',
-                color: floorGapMeters < 3 ? '#ff007f' : floorGapMeters < 6 ? '#ffaa00' : '#39ff14',
-              }}
-            >
-              {floorGapMeters}m
-            </div>
-          </div>
-        </div>
-
-        {/* Start / Attract Mode Screen */}
-        {gameState !== 'PLAYING' &&
-          gameState !== 'COUNTDOWN' &&
-          gameState !== 'PAUSED' &&
-          gameState !== 'GAME_OVER' && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'rgba(8, 2, 18, 0.94)',
+                background: 'rgba(17, 7, 36, 0.9)',
+                border: '2px solid #3b176d',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                boxShadow: '0 0 10px rgba(0, 243, 255, 0.3)',
                 display: 'flex',
                 flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '20px',
-                padding: '30px',
-                textAlign: 'center',
-                zIndex: 20,
+                gap: '3px',
               }}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <div style={{ fontSize: '0.45rem', color: '#ffe600', letterSpacing: '1px' }}>
+                STAGE 0{stats.sectorLevel}: {stats.sectorName}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                <span style={{ fontSize: '0.92rem', fontWeight: 'bold', color: '#ffffff' }}>
+                  {stats.altitudeMeters}m
+                </span>
+                {stats.metersToNextGate > 0 && (
+                  <span style={{ fontSize: '0.45rem', color: '#00f3ff' }}>
+                    GATE {stats.metersToNextGate}m
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Center HUD: Hand Lock Status & Shield Badge */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {isHandTrackingActive && (
                 <div
                   style={{
-                    fontFamily: "'Press Start 2P', monospace",
-                    fontSize: '0.62rem',
-                    letterSpacing: '2px',
-                    color: '#ffe600',
-                    textShadow: '0 0 8px rgba(255, 230, 0, 0.6)',
-                  }}
-                >
-                  ★ 1983 ARCADE REVIVAL ★
-                </div>
-                <h1
-                  style={{
-                    fontFamily: "'Press Start 2P', monospace",
-                    fontSize: '1.9rem',
-                    letterSpacing: '3px',
+                    background: isHandLockActive ? 'rgba(5, 78, 59, 0.92)' : 'rgba(120, 53, 15, 0.92)',
+                    border: `2px solid ${isHandLockActive ? '#10b981' : '#f59e0b'}`,
+                    padding: '5px 12px',
+                    borderRadius: '20px',
                     color: '#ffffff',
-                    margin: 0,
-                    textShadow: '0 0 10px #00f3ff, 0 0 20px #ff007f',
+                    fontSize: '0.48rem',
+                    letterSpacing: '0.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: isHandLockActive ? '0 0 10px rgba(16, 185, 129, 0.45)' : 'none',
                   }}
                 >
-                  SKYWARD ROLL
-                </h1>
-              </div>
+                  <span>{isHandLockActive ? '🔒 HAND LOCK: ON' : '⚠️ CALIBRATING'}</span>
+                  <span style={{ fontSize: '0.40rem', color: '#a7f3d0' }}>[C] RE-LOCK</span>
+                </div>
+              )}
 
-              {/* 3 Step Arcade Tutorial Cards */}
+              {stats.isShieldActive && (
+                <div
+                  style={{
+                    background: stats.shieldTimer < 1.2
+                      ? (Math.floor(Date.now() / 150) % 2 === 0 ? 'rgba(255, 0, 127, 0.95)' : 'rgba(255, 230, 0, 0.95)')
+                      : 'rgba(2, 132, 199, 0.9)',
+                    border: `2px solid ${stats.shieldTimer < 1.2 ? '#ffffff' : '#00f3ff'}`,
+                    padding: '6px 16px',
+                    borderRadius: '20px',
+                    color: stats.shieldTimer < 1.2 ? '#000000' : '#ffffff',
+                    fontWeight: 'bold',
+                    fontSize: '0.62rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: stats.shieldTimer < 1.2 ? '0 0 16px #ff007f' : '0 0 14px #00f3ff',
+                    letterSpacing: '0.5px',
+                  }}
+                >
+                  🛡️ {stats.shieldTimer < 1.2 ? 'EXPIRING!' : 'SHIELD'} {stats.shieldTimer.toFixed(1)}s
+                </div>
+              )}
+            </div>
+
+            {/* Lava Distance Badge */}
+            <div
+              style={{
+                background: 'rgba(17, 7, 36, 0.9)',
+                border: `2px solid ${
+                  floorGapMeters < 3 ? '#ff007f' : floorGapMeters < 6 ? '#ffaa00' : '#3b176d'
+                }`,
+                padding: '6px 14px',
+                borderRadius: '8px',
+                boxShadow: floorGapMeters < 3 ? '0 0 12px rgba(255, 0, 127, 0.6)' : 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '3px',
+                textAlign: 'right',
+              }}
+            >
               <div
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '14px',
-                  maxWidth: '520px',
-                  width: '100%',
+                  fontSize: '0.45rem',
+                  color: floorGapMeters < 3 ? '#ff007f' : '#ffaa00',
                 }}
               >
-                <div
-                  style={{
-                    background: 'rgba(23, 10, 48, 0.9)',
-                    border: '2px solid #5b21b6',
-                    borderRadius: '10px',
-                    padding: '12px 10px',
-                    boxShadow: '0 0 10px rgba(139, 92, 246, 0.2)',
-                  }}
-                >
-                  <div style={{ fontSize: '1.6rem', marginBottom: '6px' }}>👐</div>
-                  <div
-                    style={{
-                      fontFamily: "'Press Start 2P', monospace",
-                      fontSize: '0.58rem',
-                      color: '#00f3ff',
-                    }}
-                  >
-                    1. HANDS UP
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginTop: '6px' }}>
-                    Hold both hands in camera view
-                  </div>
-                </div>
+                LAVA GAP
+              </div>
+              <div
+                style={{
+                  fontSize: '0.92rem',
+                  fontWeight: 'bold',
+                  color: floorGapMeters < 3 ? '#ff007f' : floorGapMeters < 6 ? '#ffaa00' : '#39ff14',
+                }}
+              >
+                {floorGapMeters}m
+              </div>
+            </div>
+          </div>
+        )}
 
-                <div
-                  style={{
-                    background: 'rgba(23, 10, 48, 0.9)',
-                    border: '2px solid #5b21b6',
-                    borderRadius: '10px',
-                    padding: '12px 10px',
-                    boxShadow: '0 0 10px rgba(139, 92, 246, 0.2)',
-                  }}
-                >
-                  <div style={{ fontSize: '1.6rem', marginBottom: '6px' }}>⚖️</div>
-                  <div
-                    style={{
-                      fontFamily: "'Press Start 2P', monospace",
-                      fontSize: '0.58rem',
-                      color: '#39ff14',
-                    }}
-                  >
-                    2. TILT TO ROLL
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginTop: '6px' }}>
-                    Raise left or right to balance & dodge pits
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: 'rgba(23, 10, 48, 0.9)',
-                    border: '2px solid #5b21b6',
-                    borderRadius: '10px',
-                    padding: '12px 10px',
-                    boxShadow: '0 0 10px rgba(139, 92, 246, 0.2)',
-                  }}
-                >
-                  <div style={{ fontSize: '1.6rem', marginBottom: '6px' }}>⭐</div>
-                  <div
+        {/* Section 8: Mobile Slim In-Game HUD (During Play) */}
+        {isMobile && (gameState === 'PLAYING' || gameState === 'COUNTDOWN') && (
+          <div
+            className="mobile-play-hud"
+            style={{
+              position: 'absolute',
+              top: 'calc(8px + env(safe-area-inset-top, 0px))',
+              left: '10px',
+              right: '10px',
+              background: 'rgba(10, 5, 25, 0.78)',
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+              border: '1px solid #3b176d',
+              borderRadius: '10px',
+              padding: '8px 12px',
+              zIndex: 25,
+              pointerEvents: 'none',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
+            }}
+          >
+            {/* Row 1: Stage name, progress bar, 44x44 Pause icon button */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
+                  <span
                     style={{
                       fontFamily: "'Press Start 2P', monospace",
                       fontSize: '0.58rem',
                       color: '#ffe600',
+                      letterSpacing: '0.5px',
                     }}
                   >
-                    3. HIT WARPS
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginTop: '6px' }}>
-                    Jump ahead +7m and escape rising lava!
-                  </div>
+                    STAGE 0{stats.sectorLevel}: {stats.sectorName}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "'Press Start 2P', monospace",
+                      fontSize: '0.52rem',
+                      color: '#00f3ff',
+                    }}
+                  >
+                    {stats.altitudeMeters}m
+                  </span>
+                </div>
+                {/* Progress bar */}
+                <div
+                  style={{
+                    width: '100%',
+                    height: '4px',
+                    background: '#1a0d33',
+                    borderRadius: '2px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${Math.round(stats.sectorProgress * 100)}%`,
+                      height: '100%',
+                      background: 'linear-gradient(90deg, #ffe600, #ff007f)',
+                    }}
+                  />
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div style={{ display: 'flex', gap: '14px', marginTop: '6px' }}>
-                <button
-                  onClick={onStartGame}
-                  style={{
-                    background: isCalibrated
-                      ? 'linear-gradient(180deg, #10b981 0%, #047857 100%)'
-                      : 'linear-gradient(180deg, #059669 0%, #065f46 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    padding: '14px 34px',
-                    fontFamily: "'Press Start 2P', monospace",
-                    fontSize: '0.8rem',
-                    letterSpacing: '1px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 0 #065f46, 0 0 20px rgba(16, 185, 129, 0.6)',
-                    transition: 'all 0.08s ease',
-                  }}
-                >
-                  {isCalibrated ? '★ START GAME ★' : '★ CALIBRATE & START ★'}
-                </button>
-                <button
-                  onClick={onSkipCalibrationAndStart}
-                  style={{
-                    background: 'linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    padding: '14px 24px',
-                    fontFamily: "'Press Start 2P', monospace",
-                    fontSize: '0.68rem',
-                    letterSpacing: '0.5px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 0 #1e3a8a',
-                  }}
-                >
-                  QUICK PLAY
-                </button>
-                {onOpenHowToPlay && (
-                  <button
-                    onClick={onOpenHowToPlay}
+              {/* 44x44px Pause button */}
+              <button
+                onClick={onTogglePause}
+                aria-label="Pause Game"
+                title="Pause Game"
+                style={{
+                  pointerEvents: 'auto',
+                  width: '44px',
+                  height: '44px',
+                  minWidth: '44px',
+                  minHeight: '44px',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(180deg, #ec4899 0%, #be185d 100%)',
+                  border: '1px solid #f472b6',
+                  color: '#ffffff',
+                  fontFamily: "'Press Start 2P', monospace",
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 0 #9d174d',
+                }}
+              >
+                ⏸
+              </button>
+            </div>
+
+            {/* Row 2: Score, Hi-Score, Warps */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginTop: '6px',
+                paddingTop: '6px',
+                borderTop: '1px solid rgba(59, 23, 109, 0.6)',
+                fontFamily: "'Press Start 2P', monospace",
+                fontSize: '0.55rem',
+              }}
+            >
+              <div>
+                <span style={{ color: '#00f3ff', marginRight: '4px' }}>SCORE</span>
+                <span style={{ color: '#ffffff', fontVariantNumeric: 'tabular-nums' }}>
+                  {(stats.altitudeMeters * 10 + stats.portalsUsed * 50).toString().padStart(6, '0')}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: '#ffe600', marginRight: '4px' }}>HI</span>
+                <span style={{ color: '#ffe600', fontVariantNumeric: 'tabular-nums' }}>
+                  {Math.max(stats.altitudeMeters * 10 + stats.portalsUsed * 50, stats.bestAltitudeMeters * 10).toString().padStart(6, '0')}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: '#ff007f' }}>★ {stats.portalsUsed}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Floating Toast Notification for Stage Promotion (Never pushes canvas layout) */}
+        {stats.promotionBannerTimer > 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '72px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 35,
+              pointerEvents: 'none',
+              background: 'rgba(23, 10, 48, 0.94)',
+              border: '2px solid #00f3ff',
+              borderRadius: '8px',
+              padding: '8px 16px',
+              boxShadow: '0 0 16px rgba(0, 243, 255, 0.6)',
+              fontFamily: "'Press Start 2P', monospace",
+              fontSize: '0.62rem',
+              color: '#ffe600',
+              textAlign: 'center',
+              whiteSpace: 'nowrap',
+              animation: 'fadeInToast 0.2s ease-out',
+            }}
+          >
+            ★ REACHED: STAGE 0{stats.sectorLevel} ({stats.promotedSectorName || stats.sectorName}) ★
+          </div>
+        )}
+
+        {/* On-Screen Touch Steer Pads (When in Touch Mode on Mobile during Play) */}
+        {isMobile && controlMode === 'TOUCH' && (gameState === 'PLAYING' || gameState === 'COUNTDOWN') && onTouchTilt && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 'calc(48px + env(safe-area-inset-bottom, 0px))',
+              left: '12px',
+              right: '12px',
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '12px',
+              zIndex: 26,
+            }}
+          >
+            <button
+              onPointerDown={() => onTouchTilt(-1)}
+              onPointerUp={() => onTouchTilt(0)}
+              onPointerCancel={() => onTouchTilt(0)}
+              style={{
+                height: '48px',
+                borderRadius: '12px',
+                background: 'rgba(2, 132, 199, 0.85)',
+                border: '2px solid #38bdf8',
+                color: '#ffffff',
+                fontFamily: "'Press Start 2P', monospace",
+                fontSize: '0.62rem',
+                cursor: 'pointer',
+                touchAction: 'manipulation',
+                boxShadow: '0 3px 0 #075985',
+              }}
+            >
+              ◀ TILT LEFT
+            </button>
+            <button
+              onPointerDown={() => onTouchTilt(1)}
+              onPointerUp={() => onTouchTilt(0)}
+              onPointerCancel={() => onTouchTilt(0)}
+              style={{
+                height: '48px',
+                borderRadius: '12px',
+                background: 'rgba(236, 72, 153, 0.85)',
+                border: '2px solid #f472b6',
+                color: '#ffffff',
+                fontFamily: "'Press Start 2P', monospace",
+                fontSize: '0.62rem',
+                cursor: 'pointer',
+                touchAction: 'manipulation',
+                boxShadow: '0 3px 0 #9d174d',
+              }}
+            >
+              TILT RIGHT ▶
+            </button>
+          </div>
+        )}
+
+        {/* Section 4: Start / Attract Mode Screen */}
+        {gameState !== 'PLAYING' &&
+          gameState !== 'COUNTDOWN' &&
+          gameState !== 'PAUSED' &&
+          gameState !== 'GAME_OVER' && (
+            <div className="start-overlay">
+              <div className="start-inner">
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                  <div
+                    className="start-eyebrow"
                     style={{
-                      background: 'linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%)',
+                      fontFamily: "'Press Start 2P', monospace",
+                      fontSize: '0.62rem',
+                      letterSpacing: '2px',
+                      color: '#ffe600',
+                      textShadow: '0 0 8px rgba(255, 230, 0, 0.6)',
+                    }}
+                  >
+                    ★ 1983 ARCADE REVIVAL ★
+                  </div>
+                  <h1
+                    className="start-title"
+                    style={{
+                      fontFamily: "'Press Start 2P', monospace",
+                      fontSize: '1.9rem',
+                      letterSpacing: '3px',
+                      color: '#ffffff',
+                      margin: 0,
+                      textShadow: '0 0 10px #00f3ff, 0 0 20px #ff007f',
+                    }}
+                  >
+                    SKYWARD ROLL
+                  </h1>
+                </div>
+
+                {/* 3 Step Tutorial Cards (Stacked on phone, 3-col on desktop) */}
+                <div className="how-cards">
+                  <div className="how-card">
+                    <div className="how-card-icon">
+                      {controlMode === 'GYRO' ? '📱' : controlMode === 'TOUCH' ? '👆' : '👐'}
+                    </div>
+                    <div>
+                      <div className="how-card-title" style={{ color: '#00f3ff' }}>
+                        {controlMode === 'GYRO'
+                          ? '1. HOLD PHONE'
+                          : controlMode === 'TOUCH'
+                          ? '1. THUMB PADS'
+                          : '1. HANDS UP'}
+                      </div>
+                      <div className="how-card-desc">
+                        {controlMode === 'GYRO'
+                          ? 'Hold your phone level in both hands'
+                          : controlMode === 'TOUCH'
+                          ? 'Touch and hold left or right to tilt'
+                          : 'Hold both hands in camera view'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="how-card">
+                    <div className="how-card-icon">⚖️</div>
+                    <div>
+                      <div className="how-card-title" style={{ color: '#39ff14' }}>
+                        2. TILT TO ROLL
+                      </div>
+                      <div className="how-card-desc">
+                        {controlMode === 'GYRO'
+                          ? 'Tilt phone left/right to balance & dodge pits'
+                          : controlMode === 'TOUCH'
+                          ? 'Tap left/right pads to balance & steer'
+                          : 'Raise left or right to balance & dodge pits'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="how-card">
+                    <div className="how-card-icon">⭐</div>
+                    <div>
+                      <div className="how-card-title" style={{ color: '#ffe600' }}>
+                        3. HIT WARPS
+                      </div>
+                      <div className="how-card-desc">
+                        Jump ahead +7m and escape rising lava!
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mode Segmented Tabs inside Start Overlay */}
+                <div className="start-mode-tabs">
+                  <button
+                    type="button"
+                    className={`start-mode-tab ${controlMode === 'GYRO' ? 'active' : ''}`}
+                    onClick={() => {
+                      onSelectControlMode?.('GYRO');
+                      if (gyroPermissionRequired) onRequestGyroPermission?.();
+                    }}
+                  >
+                    📱 GYRO
+                  </button>
+                  <button
+                    type="button"
+                    className={`start-mode-tab ${controlMode === 'TOUCH' ? 'active' : ''}`}
+                    onClick={() => onSelectControlMode?.('TOUCH')}
+                  >
+                    👆 TOUCH
+                  </button>
+                  <button
+                    type="button"
+                    className={`start-mode-tab ${controlMode === 'HAND_CAM' ? 'active' : ''}`}
+                    onClick={() => {
+                      onSelectControlMode?.('HAND_CAM');
+                      if (!cameraActive) {
+                        onStartCamera?.().then((active) => {
+                          if (!active) onOpenCamModal?.();
+                        });
+                      }
+                    }}
+                  >
+                    📷 CAM
+                  </button>
+                </div>
+
+                {/* Status Indicator Line */}
+                <div className="start-status-line">
+                  {controlMode === 'GYRO' ? (
+                    gyroAvailable ? (
+                      <>
+                        <span style={{ color: '#39ff14', fontSize: '13px' }}>●</span>
+                        <span>Gyro ready</span>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ color: '#f59e0b', fontSize: '13px' }}>●</span>
+                        <span>Gyro unavailable, using Touch</span>
+                      </>
+                    )
+                  ) : controlMode === 'TOUCH' ? (
+                    <>
+                      <span style={{ color: '#39ff14', fontSize: '13px' }}>●</span>
+                      <span>Touch steering ready</span>
+                    </>
+                  ) : cameraActive ? (
+                    <>
+                      <span style={{ color: '#39ff14', fontSize: '13px' }}>●</span>
+                      <span>Camera tracking active</span>
+                    </>
+                  ) : cameraError ? (
+                    <>
+                      <span style={{ color: '#ff007f', fontSize: '13px' }}>⚠️</span>
+                      <span>Camera access blocked</span>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ color: '#00f3ff', fontSize: '13px' }}>📷</span>
+                      <span>Camera permission needed</span>
+                    </>
+                  )}
+                </div>
+
+                {/* Action Buttons: Calibrate & Start full width, 52px tall */}
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
+                  <button
+                    className="btn-start"
+                    onClick={() => {
+                      if (controlMode === 'GYRO') {
+                        if (gyroPermissionRequired) {
+                          onRequestGyroPermission?.();
+                        }
+                        onCalibrateGyro?.();
+                        onStartGame();
+                      } else if (controlMode === 'TOUCH') {
+                        onStartGame();
+                      } else {
+                        // Hand Cam mode: if camera is active, start with calibration; if camera is off, start immediately with keyboard
+                        if (cameraActive) {
+                          onStartGame();
+                        } else {
+                          onSkipCalibrationAndStart();
+                        }
+                      }
+                    }}
+                    style={{
+                      background: 'linear-gradient(180deg, #10b981 0%, #047857 100%)',
                       color: '#ffffff',
                       border: 'none',
-                      padding: '14px 20px',
+                      padding: '14px 28px',
                       fontFamily: "'Press Start 2P', monospace",
-                      fontSize: '0.68rem',
+                      fontSize: '0.85rem',
                       letterSpacing: '0.5px',
                       borderRadius: '8px',
                       cursor: 'pointer',
-                      boxShadow: '0 4px 0 #5b21b6',
+                      boxShadow: '0 4px 0 #065f46, 0 0 20px rgba(16, 185, 129, 0.6)',
+                      transition: 'all 0.08s ease',
+                      width: '100%',
                     }}
                   >
-                    📖 MANUAL
+                    {controlMode === 'GYRO'
+                      ? '★ START GAME ★'
+                      : controlMode === 'TOUCH'
+                      ? '★ START GAME ★'
+                      : !cameraActive
+                      ? '★ START GAME ★'
+                      : isCalibrated
+                      ? '★ START GAME ★'
+                      : '★ CALIBRATE & START ★'}
                   </button>
-                )}
-              </div>
 
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                Tip: Show open palm ✋ to camera or press <kbd>Space</kbd> anytime to pause.
+                  <div className="btn-row-secondary">
+                    {controlMode === 'GYRO' ? (
+                      <button
+                        onClick={onCalibrateGyro}
+                        style={{
+                          background: 'linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          padding: '12px 16px',
+                          fontFamily: "'Press Start 2P', monospace",
+                          fontSize: '0.65rem',
+                          letterSpacing: '0.5px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 0 #1e3a8a',
+                        }}
+                      >
+                        ⚖️ ZERO LEVEL
+                      </button>
+                    ) : controlMode === 'HAND_CAM' && !cameraActive ? (
+                      <button
+                        onClick={() => {
+                          onStartCamera?.().then((active) => {
+                            if (!active) onOpenCamModal?.();
+                          });
+                        }}
+                        style={{
+                          background: 'linear-gradient(180deg, #0284c7 0%, #0369a1 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          padding: '12px 16px',
+                          fontFamily: "'Press Start 2P', monospace",
+                          fontSize: '0.65rem',
+                          letterSpacing: '0.5px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 0 #075985',
+                        }}
+                      >
+                        📷 ENABLE CAMERA
+                      </button>
+                    ) : (
+                      <button
+                        onClick={onSkipCalibrationAndStart}
+                        style={{
+                          background: 'linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          padding: '12px 16px',
+                          fontFamily: "'Press Start 2P', monospace",
+                          fontSize: '0.65rem',
+                          letterSpacing: '0.5px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 0 #1e3a8a',
+                        }}
+                      >
+                        ⚡ QUICK PLAY
+                      </button>
+                    )}
+                    {onOpenHowToPlay && (
+                      <button
+                        onClick={onOpenHowToPlay}
+                        style={{
+                          background: 'linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          padding: '12px 16px',
+                          fontFamily: "'Press Start 2P', monospace",
+                          fontSize: '0.65rem',
+                          letterSpacing: '0.5px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 0 #5b21b6',
+                        }}
+                      >
+                        📖 MANUAL
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="start-tip">
+                  {controlMode === 'GYRO'
+                    ? 'Tip: Keep phone level at start or tap Zero Level.'
+                    : controlMode === 'TOUCH'
+                    ? 'Tip: Use thumb buttons at bottom of screen to steer.'
+                    : !cameraActive
+                    ? 'Tip: Steer using ← → Arrow Keys or A / D keys (or click Enable Camera for hand tracking)!'
+                    : 'Tip: Show open palm ✋ to camera or press Space to pause.'}
+                </div>
               </div>
             </div>
           )}
@@ -1783,7 +2156,16 @@ export const GameCanvas = React.memo<GameCanvasProps>(
       prev.onRestart === next.onRestart &&
       prev.onTogglePause === next.onTogglePause &&
       prev.isHandTrackingActive === next.isHandTrackingActive &&
-      prev.onOpenHowToPlay === next.onOpenHowToPlay
+      prev.onOpenHowToPlay === next.onOpenHowToPlay &&
+      prev.isMobile === next.isMobile &&
+      prev.controlMode === next.controlMode &&
+      prev.onSelectControlMode === next.onSelectControlMode &&
+      prev.onTouchTilt === next.onTouchTilt &&
+      prev.onCalibrateGyro === next.onCalibrateGyro &&
+      prev.gyroAvailable === next.gyroAvailable &&
+      prev.gyroPermissionRequired === next.gyroPermissionRequired &&
+      prev.cameraActive === next.cameraActive &&
+      prev.cameraError === next.cameraError
     );
   }
 );

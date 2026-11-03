@@ -180,7 +180,7 @@ body,
 
 .header-btn-cam-active {
   background: linear-gradient(180deg, #10b981 0%, #047857 100%);
-  box-shadow: 0 3px 0 #065f46, 0 0 10px rgba(16, 185, 129, 0.5);
+  box-shadow: 0 3px 0 #065f46, 0 4px 8px rgba(0, 0, 0, 0.4);
 }
 
 .header-btn-cam-active:hover {
@@ -188,10 +188,14 @@ body,
   transform: translateY(-1px);
 }
 
+.header-btn-cam-active:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #065f46;
+}
+
 .header-btn-cam-error {
   background: linear-gradient(180deg, #ec4899 0%, #be185d 100%);
-  box-shadow: 0 3px 0 #9d174d, 0 0 10px rgba(236, 72, 153, 0.6);
-  animation: blinkDot 1.2s infinite alternate;
+  box-shadow: 0 3px 0 #9d174d, 0 4px 8px rgba(0, 0, 0, 0.4);
 }
 
 .header-btn-cam-error:hover {
@@ -199,15 +203,25 @@ body,
   transform: translateY(-1px);
 }
 
+.header-btn-cam-error:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #9d174d;
+}
+
 .header-btn-cam-prompt {
-  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
-  box-shadow: 0 3px 0 #b45309, 0 0 10px rgba(245, 158, 11, 0.5);
-  animation: starPulse 1.5s infinite alternate;
+  background: linear-gradient(180deg, #059669 0%, #047857 100%);
+  box-shadow: 0 3px 0 #064e3b, 0 4px 8px rgba(0, 0, 0, 0.4);
 }
 
 .header-btn-cam-prompt:hover {
-  background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
+  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
   transform: translateY(-1px);
+  box-shadow: 0 4px 0 #064e3b, 0 6px 12px rgba(0, 0, 0, 0.4);
+}
+
+.header-btn-cam-prompt:active {
+  transform: translateY(3px);
+  box-shadow: 0 0 0 #064e3b;
 }
 
 .header-btn-manual:hover {
@@ -285,6 +299,10 @@ kbd {
   position: relative;
 }
 
+.arcade-canvas-container {
+  touch-action: none;
+}
+
 .crt-overlay::after {
   content: " ";
   display: block;
@@ -297,4 +315,453 @@ kbd {
   pointer-events: none;
   border-radius: inherit;
   z-index: 10;
+}
+
+/* ==========================================================================
+   SETTINGS BOTTOM SHEET & TOGGLE SWITCH STYLES
+   ========================================================================== */
+
+@keyframes slideUpSheet {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInToast {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.settings-row {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(59, 23, 109, 0.4);
+  padding: 6px 0;
+}
+
+.settings-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: #ffffff;
+}
+
+.settings-action-btn {
+  height: 44px;
+  min-width: 90px;
+  background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 0 2px 0 #075985;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+}
+
+.mode-pill {
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.mode-pill.active {
+  background: rgba(5, 78, 59, 0.9);
+  border-color: #39ff14;
+  color: #39ff14;
+  box-shadow: 0 0 8px rgba(57, 255, 20, 0.35);
+}
+
+/* Custom Accessible Toggle Switch */
+.toggle-switch {
+  width: 52px;
+  height: 32px;
+  border-radius: 16px;
+  background: #28114a;
+  border: 2px solid #5b21b6;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+.toggle-switch.active {
+  background: #059669;
+  border-color: #34d399;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.toggle-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #ffffff;
+  position: absolute;
+  left: 2px;
+  transition: transform 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.toggle-switch.active .toggle-thumb {
+  transform: translateX(20px);
+}
+
+/* Start Overlay Mode Selector & Status */
+.start-mode-tabs {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+  background: rgba(10, 3, 24, 0.85);
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid #3b176d;
+}
+
+.start-mode-tab {
+  flex: 1;
+  height: 44px;
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.start-mode-tab.active {
+  background: rgba(5, 78, 59, 0.9);
+  border-color: #39ff14;
+  color: #39ff14;
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.35);
+}
+
+.start-status-line {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 12px;
+  margin-top: 2px;
+  color: #cbd5e1;
+}
+
+/* ==========================================================================
+   MOBILE (PHONE) SPEC PART 2 LAYOUT (@media max-width: 600px)
+   ========================================================================== */
+
+@media (max-width: 600px) {
+  html, body {
+    height: 100%;
+    overscroll-behavior: none;
+    overflow: hidden;
+  }
+
+  .arcade-app {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    width: 100vw;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+             env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    overflow: hidden;
+    justify-content: flex-start;
+    align-items: stretch;
+  }
+
+  .arcade-viewport {
+    width: 100% !important;
+    height: 100% !important;
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    transform: none !important;
+  }
+
+  /* Section 4: Header (Title + Gear only, 48px) */
+  .arcade-header {
+    width: 100% !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    flex: 0 0 48px !important;
+    padding: 0 12px !important;
+    margin-bottom: 0 !important;
+    border-radius: 0 0 8px 8px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    flex-wrap: nowrap !important;
+    gap: 8px;
+  }
+
+  .brand-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex-shrink: 1;
+  }
+
+  .brand-title {
+    font-size: 14px !important;
+    letter-spacing: 0.5px;
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Gear Button (44x44px target) */
+  .header-gear-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #28114a 0%, #17072e 100%);
+    border: 1px solid #5b21b6;
+    color: #ffe600;
+    cursor: pointer;
+    box-shadow: 0 2px 0 #3b176d;
+    transition: all 0.1s ease;
+  }
+
+  .header-gear-btn:active {
+    transform: translateY(2px);
+    box-shadow: 0 0 0 #3b176d;
+  }
+
+  /* Section 2: Stage & Canvas Shell */
+  .arcade-stage {
+    width: 100% !important;
+    height: 100% !important;
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    gap: 0 !important;
+    position: relative !important;
+    overflow: hidden !important;
+  }
+
+  /* Section 3: Game Panel Fills All Remaining Height */
+  .game-panel {
+    position: relative !important;
+    width: 100% !important;
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    border-radius: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .game-panel canvas {
+    touch-action: none !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    object-fit: contain !important;
+    display: block !important;
+  }
+
+  /* Section 6: Tilt-o-meter removed on mobile */
+  .tilt-meter,
+  .mobile-play-tilt {
+    display: none !important;
+  }
+
+  .is-playing .menu-only {
+    display: none !important;
+  }
+
+  /* Section 7: Start Overlay Positioning & Stacked Cards */
+  .start-overlay {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    display: flex;
+    padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px)) 14px;
+    background: rgba(8, 2, 18, 0.94);
+    z-index: 20;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .start-inner {
+    margin: auto;
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .start-eyebrow {
+    font-size: 11px !important;
+    margin-bottom: 2px;
+  }
+
+  .start-title {
+    font-size: 26px !important;
+    white-space: nowrap !important;
+    letter-spacing: 2px !important;
+    margin: 0 !important;
+  }
+
+  .how-cards {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .how-card {
+    display: grid !important;
+    grid-template-columns: 40px 1fr !important;
+    gap: 12px !important;
+    align-items: center !important;
+    text-align: left !important;
+    padding: 10px 12px !important;
+    background: rgba(23, 10, 48, 0.9) !important;
+    border: 1px solid #5b21b6 !important;
+    border-radius: 10px !important;
+  }
+
+  .how-card-icon {
+    font-size: 1.5rem !important;
+    text-align: center !important;
+  }
+
+  .how-card-title {
+    font-size: 12px !important;
+    font-weight: bold !important;
+    line-height: 1.3 !important;
+  }
+
+  .how-card-desc {
+    font-size: 13px !important;
+    line-height: 1.3 !important;
+    color: #cbd5e1 !important;
+  }
+
+  .btn-start {
+    width: 100% !important;
+    height: 52px !important;
+    white-space: nowrap !important;
+    font-size: 15px !important;
+    letter-spacing: 0.5px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 8px !important;
+  }
+
+  .btn-row-secondary {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    margin-top: 4px !important;
+    width: 100% !important;
+  }
+
+  .btn-row-secondary button {
+    height: 48px !important;
+    font-size: 12px !important;
+    border-radius: 8px !important;
+  }
+
+  .start-tip {
+    font-size: 12px !important;
+    line-height: 1.3 !important;
+    color: #94a3b8 !important;
+    margin-top: 4px;
+    text-align: center;
+  }
+}
+
+/* Landscape Phone Support (Section 12) */
+@media (max-height: 500px) and (orientation: landscape) {
+  .arcade-app {
+    height: 100dvh;
+    padding: 2px 8px;
+    overflow: hidden;
+  }
+
+  .arcade-header {
+    height: 36px !important;
+    min-height: 36px !important;
+    flex: 0 0 36px !important;
+    margin-bottom: 2px !important;
+  }
+
+  .brand-title {
+    font-size: 12px !important;
+  }
+
+  .header-gear-btn {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    font-size: 16px !important;
+  }
+
+  .start-overlay {
+    padding: 8px 12px;
+  }
+
+  .how-cards {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+  }
 }

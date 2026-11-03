@@ -8,13 +8,13 @@ interface WebcamProps {
   onError?: (error: string | null) => void;
   state: TiltDebugState;
   isKeyboardSteering: boolean;
-  isPointerSteering?: boolean;
   videoRef?: React.RefObject<HTMLVideoElement>;
   cameraActive?: boolean;
   cameraError?: string | null;
   isReady?: boolean;
   onStartCamera?: () => Promise<boolean>;
   onOpenCamModal?: () => void;
+  compact?: boolean;
 }
 
 /**
@@ -27,13 +27,13 @@ export const Webcam = React.memo(function Webcam({
   onError,
   state,
   isKeyboardSteering,
-  isPointerSteering = false,
   videoRef: extVideoRef,
   cameraActive: extCameraActive,
   cameraError: extCameraError,
   isReady: extIsReady,
   onStartCamera: extStartCamera,
   onOpenCamModal,
+  compact = false,
 }: WebcamProps) {
   // If parent didn't supply shared camera hooks, initialize local hook
   const localHook = useMediaPipeHands(extVideoRef ? undefined : onLandmarks);
@@ -140,7 +140,7 @@ export const Webcam = React.memo(function Webcam({
                 ? state.isHandLockActive
                   ? 'rgba(6, 78, 59, 0.95)'
                   : 'rgba(5, 78, 59, 0.9)'
-                : isKeyboardSteering || isPointerSteering
+                : isKeyboardSteering
                 ? 'rgba(30, 58, 138, 0.9)'
                 : 'rgba(59, 23, 109, 0.9)',
               border: `1px solid ${
@@ -148,7 +148,7 @@ export const Webcam = React.memo(function Webcam({
                   ? state.isHandLockActive
                     ? '#34d399'
                     : '#10b981'
-                  : isKeyboardSteering || isPointerSteering
+                  : isKeyboardSteering
                   ? '#3b82f6'
                   : '#7c3aed'
               }`,
@@ -171,8 +171,6 @@ export const Webcam = React.memo(function Webcam({
                 : '● 1-HAND'
               : isKeyboardSteering
               ? '⌨️ KEYBOARD'
-              : isPointerSteering
-              ? '🖱️ MOUSE'
               : cameraActive
               ? '👐 READY'
               : 'CAM OFF'}
@@ -185,7 +183,7 @@ export const Webcam = React.memo(function Webcam({
         style={{
           position: 'relative',
           width: '100%',
-          height: '185px',
+          height: compact ? '112px' : '185px',
           overflow: 'hidden',
           borderRadius: '12px',
           border: `2px solid ${state.isHandLockActive ? '#059669' : '#4c1d95'}`,
@@ -452,7 +450,7 @@ export const Webcam = React.memo(function Webcam({
             ? state.isHandLockActive
               ? '🔒 Stance locked • Press [C] to re-lock'
               : '✨ Hold hands level in camera view'
-            : 'Tip: Hold hands in air or move mouse'}
+            : 'Tip: Hold hands in air or press arrow keys'}
         </span>
         <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '0.42rem', color: '#64748b' }}>
           STEER

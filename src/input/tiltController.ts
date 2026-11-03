@@ -8,9 +8,9 @@ export interface TiltConfig {
 }
 
 export const DEFAULT_TILT_CONFIG: TiltConfig = {
-  calibrationFrames: 25, // ~0.8s at 30fps
-  emaAlpha: 0.18,
-  deadZoneDegrees: 1.2,
+  calibrationFrames: 15, // ~0.5s at 30fps
+  emaAlpha: 0.22,
+  deadZoneDegrees: 1.0,
 };
 
 export interface HandAnchor {
@@ -453,21 +453,29 @@ export class TiltPipeline {
 
     const rawAngleDeg = (raw.angleRad * 180) / Math.PI;
 
-    // Calibration phase: ONLY advances when BOTH real hands are present in the live frame!
+    // Calibration phase: advances when BOTH real hands are present, while still providing live steering!
     if (!this.calibrator.isComplete) {
       if (isLiveDualHand) {
         this.calibrator.update(raw.leftHand, raw.rightHand, rawAngleDeg);
       }
+      const liveSmoothedDeg = this.smoother.update(rawAngleDeg);
+      const liveDeadZonedDeg = applyDeadZone(liveSmoothedDeg, this.deadZoneDeg);
+      const maxSlew = 3.2;
+      const liveDelta = liveDeadZonedDeg - this.prevFinalDeg;
+      const liveFinalDeg = this.prevFinalDeg + Math.max(-maxSlew, Math.min(maxSlew, liveDelta));
+      this.prevFinalDeg = liveFinalDeg;
+      const liveFinalRad = (liveFinalDeg * Math.PI) / 180;
+
       return {
         hasBothHands: isLiveDualHand,
         leftHand: landmarks.left ? raw.leftHand : null,
         rightHand: landmarks.right ? raw.rightHand : null,
         rawAngleRad: raw.angleRad,
         rawAngleDeg,
-        calibratedAngleDeg: 0,
-        smoothedAngleDeg: 0,
-        finalAngleDeg: 0,
-        finalAngleRad: 0,
+        calibratedAngleDeg: rawAngleDeg,
+        smoothedAngleDeg: liveSmoothedDeg,
+        finalAngleDeg: liveFinalDeg,
+        finalAngleRad: liveFinalRad,
         isCalibrating: !this.calibrator.isComplete,
         calibrationProgress: this.calibrator.progress,
         isCalibrated: this.calibrator.isComplete,

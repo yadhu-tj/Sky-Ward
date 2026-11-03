@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan for adding full mobile support to Skyward Roll, covering responsive portrait and landscape layouts, physical phone gyroscope/accelerometer tilt, propped-phone front-camera hand tracking with compact PiP, on-screen touch steering, and iOS permission handling.",
+  "updatedAt": "2026-11-02T17:36:35.329420077Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

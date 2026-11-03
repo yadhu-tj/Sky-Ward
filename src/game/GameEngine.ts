@@ -166,10 +166,16 @@ export class GameEngine {
     this.rows = this.generator.generateUpTo(1600, []);
   }
 
-  public startGame(): void {
+  public startGame(skipCountdown: boolean = false): void {
     this.reset();
-    this.changeState('COUNTDOWN');
-    this.countdownTimer = 3.2; // 3 seconds plus brief "GO!"
+    if (skipCountdown) {
+      this.countdownTimer = 0;
+      soundEffects.playCountdownBeep(true);
+      this.changeState('PLAYING');
+    } else {
+      this.changeState('COUNTDOWN');
+      this.countdownTimer = 2.4; // 2.4s punchy countdown
+    }
   }
 
   public pause(): void {
