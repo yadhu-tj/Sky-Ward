@@ -11,7 +11,7 @@ const source = ts.transpileModule(readFileSync(new URL('../src/hooks/useMediaPip
 function mountTracker(lightweight = true, getUserMedia) {
   const effects = [], states = [], models = [];
   const react = {
-    useState(initial) { const index = states.length; states.push(initial); return [initial, (next) => { states[index] = next; }]; },
+    useState(initial) { const index = states.length; states.push(initial); return [initial, (next) => { states[index] = typeof next === 'function' ? next(states[index]) : next; }]; },
     useRef(value) { return { current: value }; },
     useCallback(fn) { return fn; },
     useEffect(fn) { effects.push(fn); },
@@ -30,7 +30,7 @@ function mountTracker(lightweight = true, getUserMedia) {
     requestAnimationFrame: () => 1,
     setTimeout: () => 1, clearTimeout() {},
     cancelAnimationFrame() {},
-    require: (name) => name === 'react' ? react : name === '@mediapipe/hands' ? { Hands } : name === './handAssets' ? { handAssetUrl: (file) => `/assets/${file}` } : require(name),
+    require: (name) => name === 'react' ? react : name === '@mediapipe/hands' ? { Hands } : name === './handStartup' ? { warmHandAssets: async () => {} } : name === './handAssets' ? { handAssetUrl: (file) => `/assets/${file}` } : require(name),
   });
   const api = exports.useMediaPipeHands(undefined, lightweight);
   return { api, states, models, run: () => effects.map((fn) => fn()).filter(Boolean) };

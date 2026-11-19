@@ -318,3 +318,9 @@ body { background: radial-gradient(circle at 40% 15%, #2b104740, transparent 60%
 .mobile-help-rule > span { flex: 0 0 30px; color: #00f3ff; font-size: 24px; }
 .mobile-help-rule strong { display: block; color: #f3e8ff; }
 .mobile-help-dialog .btn-start { margin-top: 22px; }
+.tracker-startup { width: 100%; padding: 14px; border: 1px solid #7541a1; border-radius: 10px; background: #1d0d31; text-align: left; }
+.tracker-startup-heading { display: flex; justify-content: space-between; gap: 12px; color: #e7d7fa; font-size: 14px; }
+.tracker-startup-heading > span { color: #ffe184; font-variant-numeric: tabular-nums; }
+.tracker-startup p { margin-top: 10px; color: #b7a5ca; font-size: 13px; line-height: 1.5; }
+.tracker-startup .secondary-action { min-height: 44px; justify-content: center; color: #b2f5d2; border-color: #27845b; }
+.tracker-startup .tracker-slow-note { color: #ffe184; }

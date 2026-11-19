@@ -18,9 +18,10 @@ function load(path, replacements = {}) {
 }
 const { Webcam } = load('../src/components/Webcam.tsx');
 const { LandscapeCockpit } = load('../src/components/LandscapeCockpit.tsx', { './Webcam': { Webcam } });
+const trackerStartup = load('../src/components/TrackerStartup.tsx');
 const viewport = load('../src/game/viewport.ts');
 const touchSteering = load('../src/input/touchSteering.ts');
-const { GameCanvas } = load('../src/game/GameCanvas.tsx', { './soundEffects': { soundEffects: {} }, './viewport': viewport, '../input/touchSteering': touchSteering });
+const { GameCanvas } = load('../src/game/GameCanvas.tsx', { './soundEffects': { soundEffects: {} }, './viewport': viewport, '../components/TrackerStartup': trackerStartup, '../input/touchSteering': touchSteering });
 const engine = { state: 'CALIBRATING', stats: {}, ball: { x: 350 }, bar: { angleRad: 0 }, floorGap: 380 };
 const props = { engine, tiltAngleRad: 0, isCalibrated: false, onStartGame() {}, onSkipCalibrationAndStart() {}, onRestart() {}, onTogglePause() {} };
 
@@ -143,4 +144,14 @@ test('high score retains warp bonuses from an earlier run', () => {
     state: {}, controlMode: 'KEYBOARD', isKeyboardSteering: false,
   }));
   assert.match(html, /000120/);
+});
+
+
+test('startup shows real download progress and an immediate keyboard fallback', () => {
+  const html = renderToStaticMarkup(React.createElement(trackerStartup.TrackerStartup, {
+    progress: { stage: 'downloading', startedAt: 1, completed: 2, total: 6 }, mobile: false, onFallback() {},
+  }));
+  assert.match(html, /Downloading hand tracking/);
+  assert.match(html, /2\/6 files/);
+  assert.match(html, /Play with Keyboard/);
 });

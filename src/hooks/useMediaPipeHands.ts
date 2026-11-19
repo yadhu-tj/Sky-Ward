@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Hands } from '@mediapipe/hands';
 import type { Results } from '@mediapipe/hands';
 import { handAssetUrl } from './handAssets';
+import { warmHandAssets } from './handStartup';
+import type { TrackerProgress } from './handStartup';
 
 export interface Landmark {
   x: number;
@@ -141,6 +143,8 @@ export function useMediaPipeHands(
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
+  const [trackerProgress, setTrackerProgress] = useState<TrackerProgress>({ stage: 'downloading', startedAt: 0, completed: 0, total: 6 });
+  const timingRef = useRef({ start: 0, downloaded: 0, prepared: 0, firstSent: 0 });
   const onFrameRef = useRef(onFrame);
   useEffect(() => {
     onFrameRef.current = onFrame;
@@ -173,6 +177,8 @@ export function useMediaPipeHands(
     canProcessRef.current = false;
     hasResultsRef.current = false;
     setIsReady(false);
+    timingRef.current = { start: performance.now(), downloaded: 0, prepared: 0, firstSent: 0 };
+    setTrackerProgress({ stage: 'downloading', startedAt: timingRef.current.start, completed: 0, total: 6 });
     const startupDeadline = setTimeout(() => {
       if (cancelled || canProcessRef.current) return;
       modelErrorRef.current = 'Hand tracking is taking too long to load. Try Touch or Keyboard while it loads.';
@@ -183,6 +189,12 @@ export function useMediaPipeHands(
     const initialization = Promise.resolve().then(async () => {
       if (cancelled) return;
       try {
+        await warmHandAssets(lightweightRef.current, (completed, total) => {
+          if (!cancelled) setTrackerProgress(previous => ({ ...previous, completed, total }));
+        });
+        if (cancelled) return;
+        timingRef.current.downloaded = performance.now();
+        setTrackerProgress(previous => ({ ...previous, stage: 'preparing' }));
         const hands = new Hands({
           locateFile: handAssetUrl,
         });
@@ -200,6 +212,14 @@ export function useMediaPipeHands(
           if (!hasResultsRef.current) {
             hasResultsRef.current = true;
             setIsReady(true);
+            setTrackerProgress(previous => ({ ...previous, stage: 'ready' }));
+            const timing = timingRef.current, now = performance.now();
+            console.info('[Sky-Ward tracker startup]', {
+              downloadMs: Math.round(timing.downloaded - timing.start),
+              prepareMs: Math.round(timing.prepared - timing.downloaded),
+              cameraWaitMs: Math.round((timing.firstSent || timing.prepared) - timing.prepared),
+              firstFrameMs: Math.round(now - (timing.firstSent || timing.prepared)), totalMs: Math.round(now - timing.start),
+            });
           }
 
           const rawDetected = results.multiHandLandmarks ?? [];
@@ -359,12 +379,15 @@ export function useMediaPipeHands(
         clearTimeout(startupDeadline);
         if (!cancelled) {
           canProcessRef.current = true;
+          timingRef.current.prepared = performance.now();
+          setTrackerProgress(previous => ({ ...previous, stage: streamRef.current ? 'first-frame' : 'camera' }));
           modelErrorRef.current = null;
           setCameraError(null);
         }
       } catch (err) {
         console.error('Failed to initialize MediaPipe Hands:', err);
         if (!cancelled) {
+          setTrackerProgress(previous => ({ ...previous, stage: 'error' }));
           modelErrorRef.current = 'Hand tracking could not load. Refresh to retry, or use Touch controls.';
           setCameraError(modelErrorRef.current);
         }
@@ -403,6 +426,7 @@ export function useMediaPipeHands(
       lastProcessTimeRef.current = now;
       isProcessingRef.current = true;
       try {
+        if (!timingRef.current.firstSent) timingRef.current.firstSent = performance.now();
         await hands.send({ image: video });
       } catch {
         // Ignore occasional frame drop
@@ -479,6 +503,7 @@ export function useMediaPipeHands(
       }
 
       streamRef.current = stream;
+      if (canProcessRef.current && !hasResultsRef.current) setTrackerProgress(previous => ({ ...previous, stage: 'first-frame' }));
       for (const track of stream.getVideoTracks()) {
         track.onended = () => {
           if (streamRef.current !== stream) return;
@@ -552,6 +577,7 @@ export function useMediaPipeHands(
   return {
     videoRef,
     bindVideo,
+    trackerProgress,
     landmarks,
     isOpenPalm,
     isReady,

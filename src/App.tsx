@@ -339,6 +339,7 @@ function App() {
   const {
     videoRef,
     bindVideo,
+    trackerProgress,
     isReady: isCameraReady,
     cameraActive,
     cameraError,
@@ -717,6 +718,7 @@ function App() {
             gyroAvailable={gyro.isSupported}
             gyroPermissionRequired={gyro.isPermissionRequired && !gyro.isPermissionGranted}
             onRequestGyroPermission={gyro.requestPermission}
+            trackerProgress={trackerProgress}
             handTrackingReady={isCameraReady}
             cameraVideoRef={bindVideo}
             trackingLostPause={trackingLostPause}

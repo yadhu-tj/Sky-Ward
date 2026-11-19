@@ -3,6 +3,8 @@ import { GameEngine } from './GameEngine';
 import type { GameState } from './GameEngine';
 import { soundEffects } from './soundEffects';
 import { mobileViewport, barScreenY } from './viewport';
+import { TrackerStartup } from '../components/TrackerStartup';
+import type { TrackerProgress } from '../hooks/handStartup';
 import { TouchSteering } from '../input/touchSteering';
 
 interface GameCanvasProps {
@@ -25,6 +27,7 @@ interface GameCanvasProps {
   gyroPermissionRequired?: boolean;
   onRequestGyroPermission?: () => Promise<boolean>;
   onPrepareGyro?: () => Promise<boolean>;
+  trackerProgress?: TrackerProgress;
   handTrackingReady?: boolean;
   cameraVideoRef?: React.Ref<HTMLVideoElement>;
   trackingLostPause?: boolean;
@@ -75,6 +78,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
     gyroPermissionRequired = false,
     onRequestGyroPermission,
     onPrepareGyro,
+    trackerProgress,
     handTrackingReady = true,
     cameraVideoRef,
     trackingLostPause = false,
@@ -1503,6 +1507,10 @@ export const GameCanvas = React.memo<GameCanvasProps>(
                   ))}
                 </div>
               </fieldset>
+              {controlMode === 'HAND_CAM' && !handTrackingReady && trackerProgress && <TrackerStartup progress={trackerProgress} mobile={isMobile} onFallback={() => {
+                onSelectControlMode?.(isMobile ? 'TOUCH' : 'KEYBOARD');
+                onSkipCalibrationAndStart();
+              }} />}
               {isMobile && <section className="mobile-control-guide" aria-label="Control setup">
                 <div className="mobile-guide-heading"><span aria-hidden="true">{controlMode === 'HAND_CAM' ? '🖐️' : controlMode === 'TOUCH' ? '👆' : '📱'}</span><div>
                   <h2>{controlMode === 'HAND_CAM' ? 'TILT ONE HAND' : controlMode === 'TOUCH' ? 'HOLD TO STEER' : 'TILT YOUR PHONE'}</h2>
@@ -1838,6 +1846,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
       prev.onCalibrateGyro === next.onCalibrateGyro &&
       prev.gyroAvailable === next.gyroAvailable &&
       prev.gyroPermissionRequired === next.gyroPermissionRequired &&
+      prev.trackerProgress === next.trackerProgress &&
       prev.handTrackingReady === next.handTrackingReady &&
       prev.cameraVideoRef === next.cameraVideoRef &&
       prev.trackingLostPause === next.trackingLostPause &&
