@@ -1628,7 +1628,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
                   : <p>Hold both hands in view. Raise one hand to tilt the bar.</p>}
               </div>
               {isMobile && controlMode === 'HAND_CAM' && (
-                <p className="setup-status" role="status">{cameraError ? cameraError : !cameraActive ? 'Enable your camera to use hand controls.' : !isHandTrackingActive ? 'Camera on · Waiting for hands' : isCalibrated ? 'Hands detected · Calibrated' : 'Hands detected · Hold level to calibrate'}</p>
+                <p className="setup-status" role="status">{cameraError ? cameraError : !cameraActive ? 'Enable your camera to use hand controls.' : isCalibrated ? 'Hand calibrated · Ready to play' : !isHandTrackingActive ? 'Camera on · Show an open palm' : 'Hand detected · Hold level to calibrate'}</p>
               )}
               <button className="btn-start" onClick={async () => {
                 if (controlMode === 'HAND_CAM' && !cameraActive) {
@@ -1643,8 +1643,8 @@ export const GameCanvas = React.memo<GameCanvasProps>(
                 }
                 if (controlMode === 'KEYBOARD' || controlMode === 'TOUCH') onSkipCalibrationAndStart();
                 else onStartGame();
-              }} disabled={controlMode === 'HAND_CAM' && cameraActive && (!isHandTrackingActive || !isCalibrated)}>
-                {controlMode === 'HAND_CAM' && !cameraActive ? 'Enable camera' : controlMode === 'HAND_CAM' && (!isHandTrackingActive || !isCalibrated) ? 'WAITING FOR HANDS' : '★ START GAME ★'}
+              }} disabled={controlMode === 'HAND_CAM' && cameraActive && !isCalibrated}>
+                {controlMode === 'HAND_CAM' && !cameraActive ? 'Enable camera' : controlMode === 'HAND_CAM' && !isCalibrated ? (isHandTrackingActive ? 'CALIBRATING...' : 'WAITING FOR HANDS') : '★ START GAME ★'}
               </button>
               <p className="start-tip">{controlMode === 'HAND_CAM' ? 'Show one open palm to pause. Space works too.' : isMobile ? 'Use the pause button whenever you need a break.' : 'Space to pause · R to restart'}</p>
             </div>

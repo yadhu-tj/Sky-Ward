@@ -1,6 +1,65 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Hands } from '@mediapipe/hands';
-import type { Results } from '@mediapipe/hands';
+import * as mpHands from '@mediapipe/hands';
+import type { Hands as HandsInstance, Results } from '@mediapipe/hands';
+
+function getMediaPipeHandsBaseUrl(): string {
+  const base = import.meta.env.BASE_URL || '/';
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${normalizedBase}mediapipe/hands`;
+  }
+  return `${normalizedBase}mediapipe/hands`;
+}
+
+type HandsConstructor = new (config?: {
+  locateFile?: (file: string, prefix?: string) => string;
+}) => HandsInstance;
+
+function resolveHandsConstructor(): HandsConstructor | null {
+  const mod = mpHands as unknown as {
+    Hands?: HandsConstructor;
+    default?: { Hands?: HandsConstructor };
+  };
+  const globalScope = (typeof window !== 'undefined' ? window : globalThis) as unknown as {
+    Hands?: HandsConstructor;
+  };
+  const ctor = mod?.Hands ?? mod?.default?.Hands ?? globalScope?.Hands;
+  return typeof ctor === 'function' ? ctor : null;
+}
+
+let handsScriptPromise: Promise<HandsConstructor | null> | null = null;
+
+function loadHandsConstructor(): Promise<HandsConstructor | null> {
+  const immediate = resolveHandsConstructor();
+  if (immediate) return Promise.resolve(immediate);
+  if (typeof document === 'undefined') return Promise.resolve(null);
+
+  const scriptSrc = `${getMediaPipeHandsBaseUrl()}/hands.js`;
+
+  if (!handsScriptPromise) {
+    handsScriptPromise = new Promise((resolve) => {
+      const existing = document.querySelector<HTMLScriptElement>(
+        `script[src="${scriptSrc}"]`
+      );
+      if (existing) {
+        existing.addEventListener('load', () => resolve(resolveHandsConstructor()), { once: true });
+        existing.addEventListener('error', () => resolve(null), { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = scriptSrc;
+      script.async = true;
+      script.onload = () => resolve(resolveHandsConstructor());
+      script.onerror = () => {
+        handsScriptPromise = null;
+        script.remove();
+        resolve(null);
+      };
+      document.head.appendChild(script);
+    });
+  }
+  return handsScriptPromise;
+}
 
 export interface Landmark {
   x: number;
@@ -92,8 +151,9 @@ export function isValidHandLandmarks(hand: Landmark[] | null): boolean {
   if (!hand || hand.length < 21) return false;
 
   const wrist = hand[0];
-  // Relaxed wrist check: allow hands across almost the entire vertical frame (2% to 98%)
-  if (wrist.y > 0.98 || wrist.y < 0.02) return false;
+  // Valid coordinates check: allow hands entering from bottom (wrist.y > 1.0) or edges
+  if (isNaN(wrist.x) || isNaN(wrist.y)) return false;
+  if (wrist.y > 1.25 || wrist.y < -0.25 || wrist.x > 1.25 || wrist.x < -0.25) return false;
 
   const indexMcp = hand[5];
   const middleMcp = hand[9];
@@ -101,12 +161,12 @@ export function isValidHandLandmarks(hand: Landmark[] | null): boolean {
 
   // Palm vertical span: distance from wrist (0) to middle MCP (9)
   const palmHeight = Math.hypot(wrist.x - middleMcp.x, wrist.y - middleMcp.y);
-  // Allows sitting comfortably back or closer to screen
-  if (palmHeight < 0.035 || palmHeight > 0.65) return false;
+  // Allows sitting comfortably back on desktop or holding palm closer to a phone screen
+  if (palmHeight < 0.02 || palmHeight > 0.95) return false;
 
   // Palm horizontal span across knuckles (index MCP 5 to pinky MCP 17)
   const palmWidth = Math.hypot(indexMcp.x - pinkyMcp.x, indexMcp.y - pinkyMcp.y);
-  if (palmWidth < 0.02 || palmWidth > 0.50) return false;
+  if (palmWidth < 0.015 || palmWidth > 0.85) return false;
 
   return true;
 }
@@ -138,18 +198,20 @@ export function useMediaPipeHands(
   const [isReady, setIsReady] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
 
   const onFrameRef = useRef(onFrame);
   useEffect(() => {
     onFrameRef.current = onFrame;
   }, [onFrame]);
 
-  const handsRef = useRef<Hands | null>(null);
+  const handsRef = useRef<HandsInstance | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animFrameIdRef = useRef<number | null>(null);
   const isProcessingRef = useRef(false);
   const isMountedRef = useRef(true);
+  const consecutiveSendErrorsRef = useRef(0);
 
   // Persistent temporal continuity tracking to prevent hand swapping
   const lastLeftCentroidRef = useRef<{ x: number; y: number } | null>(null);
@@ -160,24 +222,34 @@ export function useMediaPipeHands(
   // Initialize MediaPipe Hands model once
   useEffect(() => {
     isMountedRef.current = true;
+    isProcessingRef.current = false;
+    let cancelled = false;
 
-    try {
-      const hands = new Hands({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
-      });
+    const initHands = async () => {
+      try {
+        const HandsCtor = await loadHandsConstructor();
+        if (cancelled || !isMountedRef.current) return;
+        if (!HandsCtor) {
+          throw new Error('MediaPipe Hands constructor unavailable');
+        }
 
-      hands.setOptions({
-        maxNumHands: 2,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.55,
-        minTrackingConfidence: 0.50,
-      });
+        const handsBaseUrl = getMediaPipeHandsBaseUrl();
+        const hands = new HandsCtor({
+          locateFile: (file) => `${handsBaseUrl}/${file}`,
+        });
 
-      hands.onResults((results: Results) => {
-        if (!isMountedRef.current) return;
+        hands.setOptions({
+          maxNumHands: 2,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.48,
+          minTrackingConfidence: 0.45,
+        });
 
-        const rawDetected = results.multiHandLandmarks ?? [];
-        const rawHandedness = results.multiHandedness ?? [];
+        hands.onResults((results: Results) => {
+          if (!isMountedRef.current) return;
+
+          const rawDetected = results.multiHandLandmarks ?? [];
+          const rawHandedness = results.multiHandedness ?? [];
 
         interface HandCandidate {
           landmarks: Landmark[]; // mirrored x: 1 - lm.x
@@ -225,24 +297,23 @@ export function useMediaPipeHands(
         if (candidates.length === 1) {
           const cand = candidates[0];
 
-          // Priority 1: Check proximity to recently tracked left/right centroids
-          let isLeftCandidate = false;
-          if (leftRecent && rightRecent) {
-            const distLeft = Math.hypot(cand.centroid.x - lastLeft.x, cand.centroid.y - lastLeft.y);
-            const distRight = Math.hypot(cand.centroid.x - lastRight.x, cand.centroid.y - lastRight.y);
-            isLeftCandidate = distLeft < distRight;
-          } else if (leftRecent && !rightRecent) {
-            const distLeft = Math.hypot(cand.centroid.x - lastLeft.x, cand.centroid.y - lastLeft.y);
-            isLeftCandidate = distLeft < 0.28 || cand.centroid.x < 0.55;
+          let isLeftCandidate: boolean;
+          if (leftRecent && !rightRecent) {
+            // Strong hysteresis: keep as left unless it moves decidedly to the right half (> 0.68)
+            isLeftCandidate = cand.centroid.x < 0.68;
           } else if (rightRecent && !leftRecent) {
+            // Strong hysteresis: keep as right unless it moves decidedly to the left half (< 0.32)
+            isLeftCandidate = cand.centroid.x < 0.32;
+          } else if (leftRecent && rightRecent) {
+            // If both were recently seen, pick the closer centroid to preserve continuity
+            const distLeft = Math.hypot(cand.centroid.x - lastLeft.x, cand.centroid.y - lastLeft.y);
             const distRight = Math.hypot(cand.centroid.x - lastRight.x, cand.centroid.y - lastRight.y);
-            isLeftCandidate = !(distRight < 0.28 || cand.centroid.x > 0.45);
+            isLeftCandidate = distLeft <= distRight;
           } else {
-            // Priority 2: Use corrected anatomical handedness classifier (if confidence >= 0.70)
-            if (cand.label && cand.score >= 0.70) {
+            // First detection: prefer anatomical handedness classifier if confidence is good
+            if (cand.label && cand.score >= 0.65) {
               isLeftCandidate = cand.label === 'Left';
             } else {
-              // Priority 3: Geometric center line
               isLeftCandidate = cand.centroid.x < 0.5;
             }
           }
@@ -328,15 +399,30 @@ export function useMediaPipeHands(
         }
       });
 
-      handsRef.current = hands;
-      setIsReady(true);
-    } catch (err) {
-      console.error('Failed to initialize MediaPipe Hands:', err);
-      setCameraError('Failed to load MediaPipe Hands model.');
-    }
+        handsRef.current = hands;
+        setModelError(null);
+        setIsReady(true);
+        if (streamRef.current && !animFrameIdRef.current) {
+          animFrameIdRef.current = requestAnimationFrame(processFrameRef.current);
+        }
+      } catch (err) {
+        console.error('Failed to initialize MediaPipe Hands:', err);
+        if (!cancelled && isMountedRef.current) {
+          setModelError('Failed to load hand-tracking model.');
+        }
+      }
+    };
+
+    void initHands();
 
     return () => {
+      cancelled = true;
       isMountedRef.current = false;
+      isProcessingRef.current = false;
+      if (animFrameIdRef.current !== null) {
+        cancelAnimationFrame(animFrameIdRef.current);
+        animFrameIdRef.current = null;
+      }
       if (handsRef.current) {
         handsRef.current.close().catch(() => {});
         handsRef.current = null;
@@ -348,48 +434,78 @@ export function useMediaPipeHands(
 
   // Frame processing loop with ~30fps frame pacing to match camera sensor rate
   const processFrame = useCallback(async () => {
+    animFrameIdRef.current = null;
     if (!isMountedRef.current) return;
     const video = videoRef.current;
     const hands = handsRef.current;
 
     const now = performance.now();
     // Pace to max ~32fps (31ms) to eliminate redundant frames and CPU saturation on 60/120Hz monitors
-    if (now - lastProcessTimeRef.current >= 31 && video && hands && video.readyState >= 2 && !isProcessingRef.current) {
+    if (
+      now - lastProcessTimeRef.current >= 31 &&
+      video &&
+      hands &&
+      video.readyState >= 2 &&
+      video.videoWidth > 0 &&
+      video.videoHeight > 0 &&
+      !isProcessingRef.current
+    ) {
       lastProcessTimeRef.current = now;
       isProcessingRef.current = true;
       try {
         await hands.send({ image: video });
-      } catch {
-        // Ignore occasional frame drop
+        if (consecutiveSendErrorsRef.current > 0) {
+          consecutiveSendErrorsRef.current = 0;
+          setModelError(null);
+        }
+      } catch (err) {
+        consecutiveSendErrorsRef.current++;
+        if (consecutiveSendErrorsRef.current === 10) {
+          console.error('MediaPipe Hands frame processing failed repeatedly:', err);
+          setModelError('Hand tracking encountered a runtime error. Try reloading the page.');
+        }
       } finally {
         isProcessingRef.current = false;
       }
     }
 
-    if (streamRef.current) {
+    if (streamRef.current && isMountedRef.current && animFrameIdRef.current === null) {
       animFrameIdRef.current = requestAnimationFrame(processFrame);
     }
   }, []);
 
+  const processFrameRef = useRef(processFrame);
+  processFrameRef.current = processFrame;
+
   const attachStreamToVideo = useCallback(async () => {
     const video = videoRef.current;
     const stream = streamRef.current;
-    if (video && stream && video.srcObject !== stream) {
+    if (!video || !stream) return;
+
+    if (video.srcObject !== stream) {
       video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('muted', 'true');
+      video.setAttribute('autoplay', 'true');
+    }
+
+    if (video.paused || video.readyState < 2) {
       try {
         await video.play();
       } catch {
-        // play may be aborted if unmounted
+        // play may be aborted while transitioning visibility or if unmounted
       }
     }
   }, []);
 
-  // Ensure stream stays attached if videoRef mounts or updates
+  // Ensure stream stays attached and playing after responsive layout or visibility switches
   useEffect(() => {
     if (cameraActive && streamRef.current) {
-      attachStreamToVideo();
+      void attachStreamToVideo();
     }
-  }); // A responsive layout switch can replace the video element without changing cameraActive.
+  }); // A responsive layout switch or mobile preview reveal can update the video element without changing cameraActive.
 
   const startCamera = useCallback(async (): Promise<boolean> => {
     if (streamRef.current) {
@@ -403,15 +519,24 @@ export function useMediaPipeHands(
 
     try {
       setCameraError(null);
-      // Optimized 640x360 stream: cuts CPU/memory bandwidth by 75% while keeping 100% MediaPipe accuracy
+      // Adaptive mobile vs desktop camera constraints
+      const isMobileDevice = typeof window !== 'undefined' && window.innerWidth <= 600;
+      const videoConstraints: MediaTrackConstraints = isMobileDevice
+        ? {
+            width: { ideal: 480 },
+            height: { ideal: 640 },
+            frameRate: { ideal: 30, max: 30 },
+            facingMode: 'user',
+          }
+        : {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 30, max: 30 },
+            facingMode: 'user',
+          };
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 360 },
-          frameRate: { ideal: 30, max: 30 },
-          aspectRatio: { ideal: 1.7777777778 },
-          facingMode: 'user',
-        },
+        video: videoConstraints,
       });
 
       if (!isMountedRef.current) {
@@ -473,7 +598,7 @@ export function useMediaPipeHands(
     isOpenPalm,
     isReady,
     cameraActive,
-    cameraError,
+    cameraError: cameraError ?? modelError,
     startCamera,
     stopCamera,
   };

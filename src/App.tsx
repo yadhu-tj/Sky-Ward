@@ -75,6 +75,8 @@ function App() {
 
   const controlModeRef = useRef(controlMode);
   controlModeRef.current = controlMode;
+  const isMobileRef = useRef(isMobile);
+  isMobileRef.current = isMobile;
   const touchDirectionRef = useRef<-1 | 0 | 1>(0);
 
   const [touchDirection, setTouchDirection] = useState<-1 | 0 | 1>(0);
@@ -265,7 +267,7 @@ function App() {
 
   const handleLandmarks = useCallback((landmarks: HandLandmarks, isOpenPalm: boolean) => {
     if (controlModeRef.current !== 'HAND_CAM') return;
-    const nextState = pipelineRef.current.process(landmarks, isOpenPalm);
+    const nextState = pipelineRef.current.process(landmarks, isOpenPalm, isMobileRef.current);
 
     // Sync tilt directly to engine at full 60fps with zero React overhead
     if (!keyboardAngleRadRef.current && touchDirectionRef.current === 0) {
@@ -477,6 +479,31 @@ function App() {
     pipelineRef.current.lockoutPauseGesture(130);
     engineRef.current.startGame(skipCountdown);
   }, []);
+
+  // Automatically start the countdown as soon as hand calibration succeeds on the start screen
+  useEffect(() => {
+    if (
+      controlMode === 'HAND_CAM' &&
+      cameraActive &&
+      debugState.isCalibrated &&
+      (engineState === 'CALIBRATING' || engineState === 'READY') &&
+      !isCameraModalOpen &&
+      !isHowToPlayOpen &&
+      !isSettingsOpen
+    ) {
+      backgroundMusic.start();
+      pipelineRef.current.lockoutPauseGesture(130);
+      engineRef.current.startGame(false);
+    }
+  }, [
+    controlMode,
+    cameraActive,
+    debugState.isCalibrated,
+    engineState,
+    isCameraModalOpen,
+    isHowToPlayOpen,
+    isSettingsOpen,
+  ]);
 
   const handleSkipCalibrationAndStart = useCallback(() => {
     backgroundMusic.start();
