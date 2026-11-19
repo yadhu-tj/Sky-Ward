@@ -36,7 +36,7 @@ class SoundEffectsEngine {
    * Initializes or resumes the AudioContext on user interaction.
    */
   private getContext(): AudioContext | null {
-    if (this.muted) return null;
+    if (this.muted || ((navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation && !(navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation?.hasBeenActive)) return null;
 
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;

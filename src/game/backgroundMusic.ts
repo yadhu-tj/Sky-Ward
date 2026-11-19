@@ -126,6 +126,7 @@ class BackgroundMusicEngine {
   }
 
   public start(): void {
+    if ((navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation && !(navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation?.hasBeenActive) return;
     const ctx = this.initContext();
     if (!ctx) return;
 
@@ -148,11 +149,8 @@ class BackgroundMusicEngine {
 
   public setMode(mode: MusicMode): void {
     this.targetMode = mode;
-    this.initContext();
-
-    if (!this.isRunning && !this.isMutedState) {
-      this.start();
-    }
+    this.currentMode = mode;
+    // Mode updates run during React effects; only a user interaction starts audio.
 
     if (!this.ctx || !this.pauseFilter || !this.masterGain) return;
     const now = this.ctx.currentTime;
