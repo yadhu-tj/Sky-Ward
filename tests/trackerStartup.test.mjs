@@ -28,6 +28,7 @@ function mountTracker(lightweight = true, getUserMedia) {
     navigator: { mediaDevices: getUserMedia ? { getUserMedia } : undefined },
     performance: { now: () => 1000 },
     requestAnimationFrame: () => 1,
+    setTimeout: () => 1, clearTimeout() {},
     cancelAnimationFrame() {},
     require: (name) => name === 'react' ? react : name === '@mediapipe/hands' ? { Hands } : name === './handAssets' ? { handAssetUrl: (file) => `/assets/${file}` } : require(name),
   });

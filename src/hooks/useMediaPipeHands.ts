@@ -173,6 +173,11 @@ export function useMediaPipeHands(
     canProcessRef.current = false;
     hasResultsRef.current = false;
     setIsReady(false);
+    const startupDeadline = setTimeout(() => {
+      if (cancelled || canProcessRef.current) return;
+      modelErrorRef.current = 'Hand tracking is taking too long to load. Try Touch or Keyboard while it loads.';
+      setCameraError(modelErrorRef.current);
+    }, 30000);
 
     // Defer construction so StrictMode's discarded effect never creates a WASM runtime.
     const initialization = Promise.resolve().then(async () => {
@@ -351,7 +356,12 @@ export function useMediaPipeHands(
 
         handsRef.current = hands;
         await hands.initialize();
-        if (!cancelled) canProcessRef.current = true;
+        clearTimeout(startupDeadline);
+        if (!cancelled) {
+          canProcessRef.current = true;
+          modelErrorRef.current = null;
+          setCameraError(null);
+        }
       } catch (err) {
         console.error('Failed to initialize MediaPipe Hands:', err);
         if (!cancelled) {
@@ -364,6 +374,7 @@ export function useMediaPipeHands(
 
     return () => {
       cancelled = true;
+      clearTimeout(startupDeadline);
       cameraGenerationRef.current++;
       startPromiseRef.current = null;
       isMountedRef.current = false;

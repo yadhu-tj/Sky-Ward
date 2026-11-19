@@ -87,6 +87,8 @@ export const GameCanvas = React.memo<GameCanvasProps>(
   }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const viewportRef = useRef<HTMLDivElement>(null);
+    const trackerReadyRef = useRef(handTrackingReady);
+    trackerReadyRef.current = handTrackingReady;
     const mobileRef = useRef(isMobile);
     mobileRef.current = isMobile;
     const [isPreparingGyro, setIsPreparingGyro] = useState(false);
@@ -162,6 +164,11 @@ export const GameCanvas = React.memo<GameCanvasProps>(
       let lastState = engine.state;
 
       const render = (time: number) => {
+        if (!trackerReadyRef.current && modeRef.current === 'HAND_CAM' &&
+            (engine.state === 'CALIBRATING' || engine.state === 'READY') && time - lastTime < 100) {
+          animationFrameId = requestAnimationFrame(render);
+          return;
+        }
         const dt = Math.min((time - lastTime) / 1000, 0.1);
         lastTime = time;
 
