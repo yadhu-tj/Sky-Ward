@@ -55,8 +55,7 @@ function App() {
     if (typeof window === 'undefined') return false;
     const w = window.innerWidth;
     const h = window.innerHeight;
-    const isPhoneUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-    return w <= 600 || (h <= 500 && w > h && isPhoneUA);
+    return w <= 600 || (h <= 500 && w > h && window.matchMedia('(pointer: coarse)').matches);
   });
 
   const [isPortrait, setIsPortrait] = useState<boolean>(() => {
@@ -74,12 +73,15 @@ function App() {
     return 'HAND_CAM';
   });
 
+  const controlModeRef = useRef(controlMode);
+  controlModeRef.current = controlMode;
+  const touchDirectionRef = useRef<-1 | 0 | 1>(0);
+
   const [touchDirection, setTouchDirection] = useState<-1 | 0 | 1>(0);
 
   const handleTouchTilt = useCallback((dir: -1 | 0 | 1) => {
+    touchDirectionRef.current = dir;
     setTouchDirection(dir);
-    const angle = dir === -1 ? -0.28 : dir === 1 ? 0.28 : 0;
-    engineRef.current.setTiltAngle(angle);
   }, []);
 
   const [isHowToPlayOpen, setIsHowToPlayOpen] = useState<boolean>(false);
@@ -100,8 +102,7 @@ function App() {
     const updateDimensions = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const isPhoneUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-      const mobile = w <= 600 || (h <= 500 && w > h && isPhoneUA);
+      const mobile = w <= 600 || (h <= 500 && w > h && window.matchMedia('(pointer: coarse)').matches);
       const portrait = h > w;
       setIsMobile(mobile);
       setIsPortrait(portrait);
@@ -113,7 +114,7 @@ function App() {
       }
 
       const targetW = 1260;
-      const targetH = 716;
+      const targetH = 722;
       const padX = 24;
       const padY = 20;
       const availableW = w - padX;
@@ -121,7 +122,7 @@ function App() {
       const scaleW = availableW / targetW;
       const scaleH = availableH / targetH;
       // Scale gracefully down on compact viewports or up to 1.15 on 4K
-      const computed = Math.min(Math.max(0.46, Math.min(scaleW, scaleH)), 1.15);
+      const computed = Math.min(Math.max(0.1, Math.min(scaleW, scaleH)), 1.15);
       setScale(computed);
     };
 
@@ -196,6 +197,7 @@ function App() {
         }
       } else if (e.code === 'Space' || e.key.toLowerCase() === 'p') {
         e.preventDefault();
+        if (e.repeat) return;
         if (engineRef.current.state === 'CALIBRATING' || engineRef.current.state === 'READY') {
           handleSkipCalibrationAndStartRef.current?.();
         } else {
@@ -210,6 +212,8 @@ function App() {
         ) {
           handleSkipCalibrationAndStartRef.current?.();
         }
+      } else if (e.key.toLowerCase() === 'r') {
+        handleSkipCalibrationAndStartRef.current?.();
       } else if (e.key.toLowerCase() === 'c') {
         // Quick Re-Lock Hand Anchor posture mid-game without pausing!
         pipelineRef.current.resetCalibration();
@@ -238,9 +242,19 @@ function App() {
       }
     };
 
+    const clearHeldInput = () => {
+      pressedKeysRef.current.clear();
+      keyboardAngleRadRef.current = null;
+      setKeyboardAngleRad(null);
+      touchDirectionRef.current = 0;
+      setTouchDirection(0);
+      engineRef.current.setTiltAngle(0);
+    };
+    window.addEventListener('blur', clearHeldInput);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     return () => {
+      window.removeEventListener('blur', clearHeldInput);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
@@ -250,10 +264,11 @@ function App() {
   const lastDebugStateRef = useRef<TiltDebugState>(debugState);
 
   const handleLandmarks = useCallback((landmarks: HandLandmarks, isOpenPalm: boolean) => {
+    if (controlModeRef.current !== 'HAND_CAM') return;
     const nextState = pipelineRef.current.process(landmarks, isOpenPalm);
 
     // Sync tilt directly to engine at full 60fps with zero React overhead
-    if (!keyboardAngleRadRef.current) {
+    if (!keyboardAngleRadRef.current && touchDirectionRef.current === 0) {
       engineRef.current.setTiltAngle(nextState.finalAngleRad);
     }
 
@@ -299,9 +314,10 @@ function App() {
     cameraActive,
     cameraError,
     startCamera,
+    stopCamera,
   } = useMediaPipeHands(handleLandmarks);
 
-  const [isCameraModalOpen, setIsCameraModalOpen] = useState<boolean>(() => !isMobile);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   const [isMuted, setIsMuted] = useState<boolean>(() => {
@@ -331,13 +347,6 @@ function App() {
     } catch {}
     return backgroundMusic.isMuted();
   });
-
-  // Push physical phone tilt angle directly into engine when Gyro Mode is active
-  useEffect(() => {
-    if (controlMode === 'GYRO' && gyro.isSupported && gyro.isPermissionGranted) {
-      engineRef.current.setTiltAngle(gyro.tiltAngleRad);
-    }
-  }, [controlMode, gyro.isSupported, gyro.isPermissionGranted, gyro.tiltAngleRad]);
 
   const handleToggleMute = useCallback(() => {
     const nextMuted = soundEffects.toggleMute();
@@ -410,7 +419,7 @@ function App() {
       navigator.permissions
         .query({ name: 'camera' as PermissionName })
         .then((status) => {
-          if (status.state === 'granted' && (!isMobile || controlMode === 'HAND_CAM')) {
+          if (status.state === 'granted' && controlMode === 'HAND_CAM') {
             startCamera().then((active) => {
               if (active) {
                 setIsCameraModalOpen(false);
@@ -496,8 +505,8 @@ function App() {
   const handleContinueKeyboard = useCallback(() => {
     backgroundMusic.start();
     setIsCameraModalOpen(false);
-    handleSkipCalibrationAndStart();
-  }, [handleSkipCalibrationAndStart]);
+    setControlMode('KEYBOARD');
+  }, []);
 
   const handleRestart = useCallback(() => {
     backgroundMusic.start();
@@ -532,12 +541,10 @@ function App() {
       ? (touchDirection === -1 ? -0.28 : 0.28)
       : keyboardAngleRad !== null && keyboardAngleRad !== 0
       ? keyboardAngleRad
-      : debugState.isHandTrackingActive && (!isMobile || controlMode === 'HAND_CAM')
+      : cameraActive && debugState.isHandTrackingActive && controlMode === 'HAND_CAM'
       ? debugState.finalAngleRad
       : controlMode === 'GYRO' && gyro.isSupported && gyro.isPermissionGranted && gyro.hasReceivedReading
       ? gyro.tiltAngleRad
-      : debugState.isHandTrackingActive
-      ? debugState.finalAngleRad
       : 0;
 
   useEffect(() => {
@@ -562,156 +569,16 @@ function App() {
       >
         {/* Retro Arcade Marquee Header */}
         <header className="arcade-header">
-          {isMobile ? (
-            <>
-              <div className="brand-section">
-                <span className="brand-title">SKYWARD ROLL</span>
-              </div>
-              <button
-                className="header-gear-btn"
-                onClick={() => setIsSettingsOpen(true)}
-                aria-label="Settings"
-                aria-expanded={isSettingsOpen}
-              >
-                ⚙️
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="brand-section">
-                <span className="brand-title">
-                  <span className="star-badge">★</span>
-                  SKYWARD ROLL
-                  <span className="star-badge">★</span>
-                </span>
-                <span className="arcade-badge">ARCADE '83</span>
-              </div>
-
-              <div className="status-section">
-                <span
-                  className="status-dot"
-                  style={{
-                    background:
-                      engineState === 'PLAYING'
-                        ? '#39ff14'
-                        : engineState === 'COUNTDOWN'
-                        ? '#00f3ff'
-                        : engineState === 'PAUSED'
-                        ? '#ffe600'
-                        : engineState === 'GAME_OVER'
-                        ? '#ff007f'
-                        : '#a855f7',
-                    boxShadow:
-                      engineState === 'PLAYING'
-                        ? '0 0 10px #39ff14'
-                        : engineState === 'COUNTDOWN'
-                        ? '0 0 10px #00f3ff'
-                        : 'none',
-                  }}
-                />
-                <span
-                  className="status-text"
-                  style={{
-                    color:
-                      engineState === 'PLAYING'
-                        ? '#39ff14'
-                        : engineState === 'COUNTDOWN'
-                        ? '#00f3ff'
-                        : engineState === 'PAUSED'
-                        ? '#ffe600'
-                        : engineState === 'GAME_OVER'
-                        ? '#ff007f'
-                        : '#cbd5e1',
-                    textShadow:
-                      engineState === 'PLAYING'
-                        ? '0 0 8px rgba(57, 255, 20, 0.6)'
-                        : engineState === 'COUNTDOWN'
-                        ? '0 0 8px rgba(0, 243, 255, 0.6)'
-                        : 'none',
-                  }}
-                >
-                  {engineState === 'PLAYING'
-                    ? 'ROLLING!'
-                    : engineState === 'COUNTDOWN'
-                    ? 'GET READY!'
-                    : engineState === 'PAUSED'
-                    ? 'PAUSED'
-                    : engineState === 'GAME_OVER'
-                    ? 'GAME OVER'
-                    : '1P READY'}
-                </span>
-              </div>
-
-              <div className="header-actions">
-                <button
-                  className={`header-btn ${
-                    cameraActive
-                      ? 'header-btn-cam-active'
-                      : cameraError
-                      ? 'header-btn-cam-error'
-                      : 'header-btn-cam-prompt'
-                  }`}
-                  onClick={() => setIsCameraModalOpen(true)}
-                  aria-label={
-                    cameraActive
-                      ? 'Camera Active'
-                      : cameraError
-                      ? 'Camera Permission Blocked'
-                      : 'Enable Camera'
-                  }
-                  title={
-                    cameraActive
-                      ? 'Camera Active & Streaming'
-                      : cameraError
-                      ? 'Camera Permission Blocked - Click to fix'
-                      : 'Click to Enable Camera'
-                  }
-                >
-                  {cameraActive
-                    ? '📹 CAM ACTIVE'
-                    : cameraError
-                    ? '⚠️ CAM BLOCKED'
-                    : '📷 ENABLE CAMERA'}
-                </button>
-                <button
-                  className={`header-btn ${
-                    isMusicMuted ? 'header-btn-cam-error' : 'header-btn-music'
-                  }`}
-                  onClick={handleToggleMusic}
-                  aria-label={isMusicMuted ? 'Unmute Background Music' : 'Mute Background Music'}
-                  title={isMusicMuted ? 'Unmute Background Music' : 'Mute Background Music'}
-                >
-                  {isMusicMuted ? '🔇 BGM OFF' : '🎵 BGM ON'}
-                </button>
-                <button
-                  className={`header-btn ${
-                    isMuted ? 'header-btn-cam-error' : 'header-btn-audio'
-                  }`}
-                  onClick={handleToggleMute}
-                  aria-label={isMuted ? 'Unmute Sound Effects' : 'Mute Sound Effects'}
-                  title={isMuted ? 'Unmute Sound Effects' : 'Mute Sound Effects'}
-                >
-                  {isMuted ? '🔇 SFX OFF' : '🔊 SFX ON'}
-                </button>
-                <button
-                  className="header-btn header-btn-manual"
-                  onClick={handleOpenHowToPlay}
-                  aria-label="How to Play Manual"
-                  title="Open How to Play Manual"
-                >
-                  HOW TO PLAY
-                </button>
-                <button
-                  className="header-btn header-btn-fullscreen"
-                  onClick={toggleFullscreen}
-                  aria-label="Toggle Fullscreen"
-                  title="Toggle Fullscreen"
-                >
-                  FULLSCREEN
-                </button>
-              </div>
-            </>
-          )}
+          <div className="brand-section">
+            <span className="brand-title"><span className="star-badge">★</span> SKYWARD ROLL <span className="star-badge">★</span></span>
+            {!isMobile && <span className="brand-pill">ARCADE ’83</span>}
+          </div>
+          {!isMobile && <div className="cabinet-status"><span />{engineState === 'PLAYING' ? '1P PLAYING' : engineState === 'PAUSED' ? 'PAUSED' : engineState === 'GAME_OVER' ? 'GAME OVER' : engineState === 'COUNTDOWN' ? 'GET READY' : '1P READY'}</div>}
+          <nav className="header-actions" aria-label="Game tools">
+            <button className="header-btn utility-btn" onClick={handleOpenHowToPlay}>How to Play</button>
+            <button className="header-btn utility-btn" onClick={() => setIsSettingsOpen(true)} aria-expanded={isSettingsOpen}>Settings</button>
+            {!isMobile && <button className="header-btn utility-btn" onClick={toggleFullscreen}>Fullscreen</button>}
+          </nav>
         </header>
 
         {/* Main Stage: Playfield Canvas (fills full screen on mobile) + Landscape Cockpit on desktop */}
@@ -813,7 +680,9 @@ function App() {
         cameraActive={cameraActive}
         cameraError={cameraError}
         onToggleCamera={() => {
-          if (!cameraActive) {
+          if (cameraActive) {
+            stopCamera();
+          } else {
             startCamera().then((active) => {
               if (!active) setIsCameraModalOpen(true);
             });
@@ -822,6 +691,7 @@ function App() {
         onCalibrateGyro={gyro.calibrateNeutral}
         onOpenHowToPlay={handleOpenHowToPlay}
         gyroAvailable={gyro.isSupported}
+        isMobile={isMobile}
       />
 
       {/* Retro Arcade Camera Permission Alert Modal */}

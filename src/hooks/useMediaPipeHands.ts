@@ -389,7 +389,7 @@ export function useMediaPipeHands(
     if (cameraActive && streamRef.current) {
       attachStreamToVideo();
     }
-  }, [cameraActive, attachStreamToVideo]);
+  }); // A responsive layout switch can replace the video element without changing cameraActive.
 
   const startCamera = useCallback(async (): Promise<boolean> => {
     if (streamRef.current) {

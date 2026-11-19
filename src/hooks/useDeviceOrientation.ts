@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { screenTiltDegrees } from '../input/orientation';
 
 export interface DeviceOrientationState {
   isSupported: boolean;
@@ -32,6 +33,8 @@ export function useDeviceOrientation() {
   const rawGammaRef = useRef<number | null>(null);
   const rawBetaRef = useRef<number | null>(null);
   const hasReceivedReadingRef = useRef<boolean>(false);
+  const pendingCalibrationRef = useRef(true);
+  const previousScreenAngleRef = useRef<number | null>(null);
 
   // Check support on mount
   useEffect(() => {
@@ -59,9 +62,11 @@ export function useDeviceOrientation() {
   // Calibrate current holding angle as level (0 degrees)
   const calibrateNeutral = useCallback(() => {
     const isLandscape = window.innerWidth > window.innerHeight;
-    const currentAngle = isLandscape
-      ? (rawBetaRef.current ?? 0)
-      : (rawGammaRef.current ?? 0);
+    const currentAngle = screenTiltDegrees(
+      rawGammaRef.current, rawBetaRef.current, isLandscape,
+      window.screen?.orientation?.angle ?? window.orientation ?? 0,
+    );
+    pendingCalibrationRef.current = !hasReceivedReadingRef.current;
     neutralOffsetDegRef.current = currentAngle;
     smoothedAngleDegRef.current = 0;
     setTiltAngleRad(0);
@@ -117,21 +122,15 @@ export function useDeviceOrientation() {
       }
 
       const isLandscape = window.innerWidth > window.innerHeight;
-      let rawTiltDeg = 0;
-
-      if (isLandscape) {
-        // In landscape, beta or gamma maps to roll depending on orientation angle
-        const orientation = window.screen?.orientation?.angle ?? 0;
-        if (orientation === 90) {
-          rawTiltDeg = beta !== null ? beta : 0;
-        } else if (orientation === 270 || orientation === -90) {
-          rawTiltDeg = beta !== null ? -beta : 0;
-        } else {
-          rawTiltDeg = beta !== null ? beta : (gamma ?? 0);
-        }
-      } else {
-        // Portrait: gamma is physical left/right phone tilt
-        rawTiltDeg = gamma !== null ? gamma : 0;
+      const orientation = window.screen?.orientation?.angle ?? window.orientation ?? 0;
+      const rawTiltDeg = screenTiltDegrees(gamma, beta, isLandscape, orientation);
+      // A rotation changes the sensor axis; establish a new neutral on its first reading.
+      const screenAngle = isLandscape ? orientation : -1;
+      if (pendingCalibrationRef.current || previousScreenAngleRef.current !== screenAngle) {
+        neutralOffsetDegRef.current = rawTiltDeg;
+        smoothedAngleDegRef.current = 0;
+        pendingCalibrationRef.current = false;
+        previousScreenAngleRef.current = screenAngle;
       }
 
       // Offset by user's neutral calibrated angle

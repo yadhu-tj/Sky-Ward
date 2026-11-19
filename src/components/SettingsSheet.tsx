@@ -16,6 +16,7 @@ interface SettingsSheetProps {
   onCalibrateGyro: () => void;
   onOpenHowToPlay: () => void;
   gyroAvailable?: boolean;
+  isMobile?: boolean;
 }
 
 export const SettingsSheet: React.FC<SettingsSheetProps> = ({
@@ -33,6 +34,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
   onCalibrateGyro,
   onOpenHowToPlay,
   gyroAvailable = true,
+  isMobile = false,
 }) => {
   const sheetRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -241,24 +243,16 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
                 border: '1px solid #3b176d',
               }}
             >
-              <button
-                onClick={() => onSelectControlMode('GYRO')}
-                className={`mode-pill ${controlMode === 'GYRO' ? 'active' : ''}`}
-              >
-                📱 GYRO
-              </button>
-              <button
-                onClick={() => onSelectControlMode('TOUCH')}
-                className={`mode-pill ${controlMode === 'TOUCH' ? 'active' : ''}`}
-              >
-                👆 TOUCH
-              </button>
-              <button
-                onClick={() => onSelectControlMode('HAND_CAM')}
-                className={`mode-pill ${controlMode === 'HAND_CAM' ? 'active' : ''}`}
-              >
-                📷 CAM
-              </button>
+              {(isMobile ? [
+                { mode: 'TOUCH' as const, label: 'Touch' },
+                { mode: 'GYRO' as const, label: 'Phone tilt' },
+                { mode: 'HAND_CAM' as const, label: 'Camera' },
+              ] : [
+                { mode: 'KEYBOARD' as const, label: 'Keyboard' },
+                { mode: 'HAND_CAM' as const, label: 'Camera' },
+              ]).map(({ mode, label }) => <button key={mode} onClick={() => onSelectControlMode(mode)}
+                disabled={mode === 'GYRO' && !gyroAvailable} aria-pressed={controlMode === mode}
+                className={`mode-pill ${controlMode === mode ? 'active' : ''}`}>{label}</button>)}
             </div>
           </div>
 
@@ -282,13 +276,13 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
                     : 'linear-gradient(180deg, #0284c7 0%, #0369a1 100%)',
                 }}
               >
-                {cameraActive ? 'CAMERA ON' : cameraError ? 'RETRY ACCESS' : 'ENABLE CAM'}
+                {cameraActive ? 'TURN OFF' : cameraError ? 'RETRY ACCESS' : 'ENABLE CAM'}
               </button>
             </div>
           )}
 
-          {/* Row 5: Zero Level (Re-Center Tilt) */}
-          <div className="settings-row">
+          {/* Zeroing is useful only for phone tilt. */}
+          {controlMode === 'GYRO' && <div className="settings-row">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
               <span className="settings-label">⚖️ ZERO LEVEL</span>
               <span style={{ fontSize: '11px', color: '#94a3b8' }}>
@@ -298,7 +292,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
             <button onClick={handleZeroClick} className="settings-action-btn">
               {zeroedToast ? 'ZEROED!' : 'CALIBRATE'}
             </button>
-          </div>
+          </div>}
 
           {/* Row 6: Fullscreen (Hidden on iOS Safari) */}
           {!isIOS && (

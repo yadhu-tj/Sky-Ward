@@ -1,7 +1,4 @@
-* {
-  box-sizing: border-box;
-}
-
+* { box-sizing: border-box; }
 :root {
   --neon-cyan: #00f3ff;
   --neon-pink: #ff007f;
@@ -13,755 +10,221 @@
   --arcade-border: #3b176d;
   --arcade-bezel: #1c0d38;
 }
-
-html,
-body,
-#root {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: var(--arcade-dark);
-  background-image: 
-    radial-gradient(circle at 50% 20%, rgba(168, 85, 247, 0.12) 0%, transparent 60%),
-    radial-gradient(circle at 80% 80%, rgba(0, 243, 255, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 20% 80%, rgba(255, 0, 127, 0.08) 0%, transparent 50%);
-  color: #f8fafc;
-  font-family: 'Chakra Petch', -apple-system, sans-serif;
-  user-select: none;
-  -webkit-user-select: none;
+html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+body {
+  background: radial-gradient(ellipse at 35% 0%, #24113b 0%, #0b0717 50%, #050b14 100%);
+  color: #f1eef8;
+  font-family: 'Chakra Petch', system-ui, sans-serif;
+  font-size: 16px;
 }
-
-/* Base Arcade Cabinet Environment */
-.arcade-app {
-  width: 100vw;
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  position: relative;
-}
-
-/* Responsive Zoom/Scale Viewport Wrapper */
-.arcade-viewport {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  transform-origin: center center;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 1;
-}
-
-/* ==========================================================================
-   RETRO ARCADE MARQUEE HEADER
-   ========================================================================== */
+button { font: inherit; cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+button:focus-visible, a:focus-visible { outline: 3px solid #ffe600; outline-offset: 4px; }
+button { -webkit-tap-highlight-color: transparent; }
+p { margin: 0; }
+h1, h2 { margin: 0; }
+.arcade-app { width: 100%; height: 100dvh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.arcade-viewport { display: flex; flex-direction: column; flex-shrink: 0; transform-origin: center; position: relative; }
 .arcade-header {
-  width: 1260px;
-  height: 50px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: linear-gradient(180deg, #1b0c36 0%, #100624 100%);
-  border: 2px solid var(--arcade-border);
-  border-radius: 12px;
-  padding: 0 18px;
-  margin-bottom: 12px;
-  box-shadow: 
-    0 0 20px rgba(168, 85, 247, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.6);
-  position: relative;
+  width: 1260px; height: 50px; display: flex; justify-content: space-between; align-items: center;
+  border: 1px solid #4b286b; border-radius: 12px; padding: 0 18px; margin-bottom: 12px;
+  background: rgba(17, 8, 33, .9); box-shadow: 0 4px 24px #0003;
+}
+.brand-section, .brand-title, .header-actions { display: flex; align-items: center; }
+.brand-title { gap: 9px; font-family: 'Press Start 2P', monospace; font-size: 13px; letter-spacing: 1px; color: #f6f2ff; }
+.star-badge { color: #f4d557; font-size: 20px; text-shadow: 0 0 12px #f4d55780; }
+.header-actions { gap: 10px; }
+.header-btn { min-height: 36px; padding: 8px 14px; border: 1px solid #513368; border-radius: 7px; color: #d7cce8; background: #211332; font-size: 14px; font-weight: 600; }
+.header-btn:hover, .secondary-action:hover { background: #342047; border-color: #a47acc; }
+.arcade-stage { display: flex; align-items: flex-start; gap: 20px; width: 1260px; height: 660px; }
+.arcade-canvas-container { touch-action: none; }
+.crt-overlay { position: relative; }
+.crt-overlay::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(transparent 0 3px, #0001 3px 4px); pointer-events: none; z-index: 10; border-radius: inherit; }
+.game-panel canvas { display: block; }
+.start-overlay { position: absolute; inset: 0; display: flex; overflow-y: auto; padding: 38px; background: linear-gradient(150deg, rgba(18, 7, 37, .96), rgba(6, 4, 17, .9)); z-index: 20; }
+.start-inner { margin: auto; width: 100%; max-width: 590px; display: flex; flex-direction: column; align-items: stretch; gap: 22px; text-align: left; }
+.start-eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 3px; color: #c3a0e5; }
+.start-title { font-size: 46px; line-height: 1.15; font-weight: 700; letter-spacing: -.7px; color: #fff; text-shadow: 0 0 28px #b28bff40; }
+.start-objective { max-width: 500px; font-size: 18px; line-height: 1.65; color: #bcb2ce; }
+.control-picker { border: 0; padding: 0; margin: 6px 0 0; min-width: 0; }
+.control-picker legend { font-size: 14px; font-weight: 600; color: #ded3eb; margin-bottom: 10px; padding: 0; }
+.start-mode-tabs { display: flex; gap: 6px; width: 100%; background: #080410; padding: 5px; border-radius: 12px; border: 1px solid #44285f; }
+.start-mode-tab { flex: 1; min-width: 0; min-height: 52px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: #b2a4c6; font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.start-mode-tab.active { color: #e9dcff; background: #34204c; border-color: #8f61b8; }
+.start-mode-tab:hover:not(:disabled) { background: #2b1a40; }
+.control-instruction { min-height: 46px; display: flex; align-items: center; gap: 8px; color: #bdb2ce; font-size: 16px; line-height: 1.6; }
+kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; padding: 3px 6px; border: 1px solid #634d7e; border-bottom-width: 3px; border-radius: 5px; color: #e0d3ef; background: #20162e; font: 13px ui-monospace, monospace; white-space: nowrap; }
+.btn-start { width: 100%; min-height: 58px; border: 1px solid #43dbb1; border-radius: 10px; background: linear-gradient(#12b98a, #078361); color: #fff; font-size: 18px; font-weight: 700; letter-spacing: .5px; box-shadow: 0 4px 0 #034c3c, 0 6px 24px #0abf8518; }
+.btn-start:hover:not(:disabled) { background: linear-gradient(#20c99a, #099b72); }
+.start-tip { text-align: center; color: #a399b2; font-size: 14px; line-height: 1.5; }
+.arcade-cockpit { width: 320px; height: 660px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; scrollbar-width: thin; }
+.sidebar-card { border: 1px solid #4a2868; border-radius: 14px; background: linear-gradient(145deg, #180d28, #10091d); padding: 12px; flex-shrink: 0; }
+.panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.panel-heading h2 { font-size: 14px; font-weight: 600; color: #e8def5; }
+.panel-caption { font-size: 12px; color: #a89ab9; }
+.camera-preview { height: 132px; position: relative; border-radius: 9px; border: 1px solid #52316c; background: #080410; overflow: hidden; }
+.camera-preview video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
+.camera-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #c5b5d6; }
+.camera-placeholder > span { color: #a47fc5; font-size: 36px; }
+.camera-placeholder small { font-size: 13px; color: #9385a5; }
+.camera-guide { position: absolute; inset: 20px 30px; border: 1px dashed #ffffff50; border-radius: 18px; pointer-events: none; }
+.setup-status { margin: 10px 0 0; color: #c0ddcc; font-size: 14px; line-height: 1.5; }
+.status-warning { color: #f4c780; }
+.panel-description { font-size: 15px; line-height: 1.6; color: #b2a6c1; }
+.camera-card .panel-description { margin-top: 8px; }
+.secondary-action { width: 100%; min-height: 42px; margin-top: 14px; padding: 9px 12px; border: 1px solid #62427c; border-radius: 8px; background: #281936; color: #e7ddf2; font-size: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.text-action { color: #c6afe1; background: none; border: 0; padding: 4px 0; font-size: 13px; text-decoration: underline; text-underline-offset: 4px; }
+.calibration-card .panel-heading { margin-bottom: 0; }
+.calibration-card .panel-description { margin-top: 12px; }
+progress { display: block; width: 100%; height: 6px; margin-top: 12px; border: 0; border-radius: 4px; overflow: hidden; background: #352047; accent-color: #a87cd2; }
+progress::-webkit-progress-bar { background: #352047; }
+progress::-webkit-progress-value { background: #a87cd2; border-radius: 4px; }
+.keyboard-guide { padding: 24px 20px; }
+.guide-icon { font-size: 42px; color: #c2a1e4; display: block; margin-bottom: 22px; }
+.keyboard-guide h2 { font-size: 20px; margin-bottom: 10px; }
+.shortcut-list { margin: 24px 0 0; }
+.shortcut-list > div { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-top: 1px solid #382445; }
+.shortcut-list dt { color: #b7a9c7; font-size: 14px; }
+.shortcut-list dd { margin: 0; }
+.sidebar-note { margin-top: auto; padding: 16px; color: #9584a6; font-size: 14px; line-height: 1.7; }
+.balance-track { height: 38px; display: flex; align-items: center; justify-content: center; background: #090511; border-radius: 8px; overflow: hidden; }
+.balance-track > span { width: 80%; height: 4px; background: #56d6ce; border-radius: 4px; transition: transform .1s; position: relative; }
+.balance-track i { width: 12px; height: 12px; border-radius: 50%; background: #ffe184; position: absolute; left: calc(50% - 6px); top: -4px; box-shadow: 0 0 12px #ffe18480; }
+.balance-caption { margin-top: 10px; color: #bfb1d0; text-align: center; font-size: 13px; }
+.sector-name { font-size: 13px; color: #baabcd; }
+.score-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 14px 0 0; }
+.score-grid > div { min-width: 0; padding: 10px 4px; text-align: center; background: #070210; border: 1px solid #3b176d; border-radius: 7px; }
+.score-grid dt { font-size: 13px; color: #ad9abd; margin-bottom: 6px; }
+.score-grid dd { margin: 0; font-family: ui-monospace, monospace; font-size: 20px; color: #e6dcf2; }
+.score-grid > div:first-child dd { font-size: 28px; color: #f4db87; letter-spacing: 2px; }
+/* Settings remains a single home for audio, camera, and control preferences. */
+.settings-row { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #3b176d66; padding: 12px 0; }
+.settings-label { font-size: 13px; color: #ece4f6; }
+.settings-action-btn { min-height: 44px; min-width: 90px; padding: 0 12px; border: 1px solid #6d4b8a; border-radius: 8px; color: #fff; background: #342047; font-size: 13px; }
+.mode-pill { min-height: 44px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #bbaccb; font-size: 13px; }
+.mode-pill.active { background: #3b2553; border-color: #a47acc; color: #fff; }
+.toggle-switch { width: 52px; height: 32px; flex-shrink: 0; border-radius: 16px; border: 2px solid #6a4a84; background: #281b36; position: relative; padding: 0; }
+.toggle-switch.active { background: #078361; border-color: #43dbb1; }
+.toggle-thumb { position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.toggle-switch.active .toggle-thumb { transform: translateX(20px); }
+@keyframes slideUpSheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes fadeInToast { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (max-width: 600px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  html, body { overscroll-behavior: none; }
+  .arcade-app { align-items: stretch; justify-content: flex-start; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+  .arcade-viewport { width: 100%; height: 100%; min-height: 0; transform: none !important; flex: 1; }
+  .arcade-header { width: 100%; height: 56px; flex: 0 0 56px; padding: 0 12px; margin: 0; border-radius: 0; }
+  .brand-title { font-size: 10px; letter-spacing: 0; gap: 4px; }
+  .star-badge { display: none; }
+  .header-actions { gap: 6px; }
+  .header-btn { padding: 5px 8px; min-height: 40px; font-size: 12px; }
+  .arcade-stage { width: 100%; height: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0; }
+  .game-panel { width: 100% !important; height: 100% !important; flex: 1; min-height: 0; border: 0 !important; border-radius: 0 !important; display: flex; align-items: center; justify-content: center; }
+  .game-panel canvas { width: 100%; height: 100%; object-fit: contain; }
+  .start-overlay { padding: 28px 22px; }
+  .start-inner { max-width: 480px; gap: 20px; }
+  .start-title { font-size: clamp(28px, 8vw, 38px); }
+  .start-eyebrow { font-size: 11px; letter-spacing: 2px; }
+  .start-objective { font-size: 16px; }
+  .start-mode-tab { font-size: 14px; min-height: 50px; gap: 6px; }
+  .btn-start { min-height: 54px; }
+  .start-tip { font-size: 13px; }
+  .settings-row { flex-wrap: wrap; }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .arcade-header { height: 46px; flex-basis: 46px; }
+  .start-overlay { padding: 18px 28px; }
+  .start-inner { max-width: 620px; gap: 12px; }
+  .start-title { font-size: 28px; }
+  .start-objective { line-height: 1.4; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+/* Preserve the cabinet's retro identity while tightening its hierarchy. */
+body { background: radial-gradient(circle at 40% 15%, #2b104740, transparent 60%), radial-gradient(circle at 80% 85%, #00f3ff0a, transparent 50%), #070312; }
+.arcade-header { border: 2px solid #3b176d; background: linear-gradient(#1b0c36, #100624); box-shadow: 0 0 20px #a855f72b, inset 0 1px 0 #ffffff20; }
+.brand-section { gap: 12px; }
+.brand-title { color: white; text-shadow: 0 0 7px #00f3ff, 0 0 18px #ff007f80; }
+.brand-pill { color: #ffe600; font-size: 14px; white-space: nowrap; }
+.cabinet-status { font: 10px 'Press Start 2P', monospace; color: #d9c8f3; border: 1px solid #533077; border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; background: #080410; }
+.cabinet-status > span { width: 8px; height: 8px; border-radius: 50%; background: #a855f7; box-shadow: 0 0 8px #a855f780; }
+.header-btn { font: 10px 'Press Start 2P', monospace; text-transform: uppercase; border: 0; color: white; background: linear-gradient(#8b5cf6, #6d28d9); box-shadow: 0 3px 0 #4c1d95, 0 4px 10px #0005; }
+.header-btn:hover { background: linear-gradient(#a78bfa, #7c3aed); }
+.header-btn:last-child { background: linear-gradient(#0284c7, #0369a1); box-shadow: 0 3px 0 #075985; }
+.start-overlay { background: linear-gradient(150deg, #0c0319ed, #070210e8); padding: 26px; }
+.start-inner { max-width: 680px; gap: 18px; align-items: center; text-align: center; }
+.start-eyebrow { color: #ffe600; font: 11px 'Press Start 2P', monospace; letter-spacing: 2px; text-shadow: 0 0 8px #ffe60050; }
+.start-title { font: 30px/1.4 'Press Start 2P', monospace; letter-spacing: 2px; color: white; text-shadow: 0 0 10px #00f3ff80, 0 0 22px #ff007f70; }
+.start-objective { font-size: 17px; color: #c8bbdc; }
+.how-cards { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 3px 0; }
+.how-card { padding: 15px 10px; border: 1px solid #7737b9; border-radius: 11px; background: linear-gradient(#1b0b34, #140824); }
+.how-card-icon { display: block; font-size: 30px; margin-bottom: 10px; }
+.how-card-title { font-size: 14px; font-weight: 700; color: #00f3ff; margin-bottom: 7px; }
+.how-card:nth-child(2) .how-card-title { color: #39ff14; }
+.how-card:nth-child(3) .how-card-title { color: #ffe600; }
+.how-card-desc { font-size: 15px; line-height: 1.4; color: #d0c7dd; }
+.control-picker { width: 100%; margin-top: 0; text-align: left; }
+.control-picker legend { color: #a99abd; font-size: 13px; }
+.start-mode-tabs { border-color: #48216d; }
+.start-mode-tab { min-height: 44px; font-size: 14px; }
+.start-mode-tab.active { border-color: #39ff14; background: #063e31; color: #39ff14; box-shadow: 0 0 10px #39ff1425; }
+.btn-start { font: 14px 'Press Start 2P', monospace; min-height: 54px; text-transform: uppercase; border-color: #18d8a4; background: linear-gradient(#10b981, #047857); box-shadow: 0 4px 0 #065f46, 0 0 22px #10b98135; }
+.start-tip { font-size: 14px; color: #ae9dbe; }
+.sidebar-card { border: 2px solid #3b176d; background: linear-gradient(#160a2c, #0d041c); box-shadow: 0 0 14px #a855f714; }
+.panel-heading h2 { font: 10px/1.6 'Press Start 2P', monospace; color: #ffe600; text-shadow: 0 0 8px #ffe60030; }
+.panel-caption { font-size: 11px; color: #bea2dc; }
+.camera-preview { border: 2px solid #6d28d9; box-shadow: inset 0 0 16px #0006; }
+.camera-guide { inset: 50% 10px auto; height: 1px; border: 0; border-top: 1px solid #00f3ff90; border-radius: 0; }
+.camera-anchors { position: absolute; bottom: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between; padding: 5px 8px; border: 1px solid #00f3ff60; border-radius: 7px; background: #07031290; color: #00f3ff; font: 9px ui-monospace, monospace; }
+.camera-anchors span:last-child { color: #ff70bf; }
+.setup-status { font-size: 14px; color: #b0e4bf; }
+.calibration-card .panel-heading h2 { color: #39ff14; font-size: 9px; }
+.text-action { font-size: 12px; color: #c4a5f5; }
+.balance-track { border: 1px solid #58228b; background: #070210; }
+.balance-track > span { height: 5px; background: linear-gradient(90deg, #00f3ff, #39ff14, #00f3ff); box-shadow: 0 0 10px #00f3ff60; }
+.balance-track i { background: radial-gradient(circle at 35% 35%, white, #ffe600 60%, #d97706); width: 16px; height: 16px; top: -5px; left: calc(50% - 8px); box-shadow: 0 0 10px #ffe600; }
+.balance-caption { font: 9px/1.5 'Press Start 2P', monospace; color: #39ff14; margin-top: 10px; }
+.score-grid dd { font-family: 'Press Start 2P', monospace; font-size: 11px; }
+.score-grid > div:first-child dd { font-size: 11px; letter-spacing: 0; color: #ffe600; text-shadow: 0 0 8px #ffe60060; }
+.flight-stats .secondary-action { background: linear-gradient(#ec4899, #be185d); border: 0; box-shadow: 0 3px 0 #831843; font: 10px 'Press Start 2P', monospace; color: white; }
+.sidebar-note { text-align: center; font: 9px/2.2 'Press Start 2P', monospace; color: #8d6ba8; }
+.keyboard-guide h2 { font: 13px/1.6 'Press Start 2P', monospace; color: #00f3ff; }
+.secondary-action { text-transform: uppercase; }
+.visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip-path: inset(50%); white-space: nowrap; border: 0; }
+@media (max-width: 600px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .brand-title { font-size: 10px; }
+  .header-btn { font: 11px 'Chakra Petch', system-ui, sans-serif; padding: 6px 8px; }
+  .start-inner { gap: 16px; }
+  .start-title { font-size: clamp(19px, 5.3vw, 28px); }
+  .start-eyebrow { font-size: 9px; letter-spacing: 1px; }
+  .start-overlay { padding: 24px 18px; }
+  .how-cards { grid-template-columns: 1fr; gap: 8px; }
+  .how-card { display: grid; grid-template-columns: 40px 1fr; column-gap: 10px; padding: 10px 12px; text-align: left; }
+  .how-card-icon { grid-row: 1 / 3; font-size: 25px; margin: 0; align-self: center; }
+  .how-card-title { font-size: 13px; margin-bottom: 3px; }
+  .how-card-desc { font-size: 14px; }
+  .btn-start { font-size: 12px; }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .start-overlay { padding: 18px 24px; }
+  .how-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .how-card { display: block; text-align: center; }
+  .how-card-icon { margin-bottom: 6px; }
 }
 
-.brand-section {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.brand-title {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.95rem;
-  letter-spacing: 2px;
-  color: #ffffff;
-  text-shadow: 
-    0 0 7px var(--neon-cyan),
-    0 0 14px var(--neon-cyan),
-    0 0 24px var(--neon-pink);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.brand-title .star-badge {
-  color: var(--neon-yellow);
-  animation: starPulse 1.4s ease-in-out infinite alternate;
-}
-
-@keyframes starPulse {
-  0% { transform: scale(0.9) rotate(-10deg); filter: drop-shadow(0 0 4px var(--neon-yellow)); }
-  100% { transform: scale(1.15) rotate(10deg); filter: drop-shadow(0 0 12px var(--neon-yellow)); }
-}
-
-.brand-pill {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.55rem;
-  background: #ff007f;
-  color: #ffffff;
-  padding: 3px 8px;
-  border-radius: 4px;
-  letter-spacing: 1px;
-  box-shadow: 0 0 10px rgba(255, 0, 127, 0.6);
-  text-transform: uppercase;
-}
-
-/* Center Arcade Marquee Status */
-.status-section {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: rgba(0, 0, 0, 0.4);
-  padding: 4px 14px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.status-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  animation: blinkDot 1s infinite alternate;
-}
-
-@keyframes blinkDot {
-  0% { opacity: 0.4; transform: scale(0.85); }
-  100% { opacity: 1; transform: scale(1.15); }
-}
-
-.status-text {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.65rem;
-  letter-spacing: 1px;
-}
-
-/* Right Marquee Actions */
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* 3D Pushbutton Styling */
-.header-btn {
-  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
-  color: #ffffff;
-  border: none;
-  border-radius: 6px;
-  padding: 8px 16px;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.58rem;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 3px 0 #1e3a8a, 0 4px 8px rgba(0, 0, 0, 0.5);
-  transition: all 0.08s ease;
-}
-
-.header-btn-manual {
-  background: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%);
-  box-shadow: 0 3px 0 #5b21b6, 0 4px 8px rgba(109, 40, 217, 0.35);
-}
-
-.header-btn-cam-active {
-  background: linear-gradient(180deg, #10b981 0%, #047857 100%);
-  box-shadow: 0 3px 0 #065f46, 0 4px 8px rgba(0, 0, 0, 0.4);
-}
-
-.header-btn-cam-active:hover {
-  background: linear-gradient(180deg, #34d399 0%, #059669 100%);
-  transform: translateY(-1px);
-}
-
-.header-btn-cam-active:active {
-  transform: translateY(3px);
-  box-shadow: 0 0 0 #065f46;
-}
-
-.header-btn-cam-error {
-  background: linear-gradient(180deg, #ec4899 0%, #be185d 100%);
-  box-shadow: 0 3px 0 #9d174d, 0 4px 8px rgba(0, 0, 0, 0.4);
-}
-
-.header-btn-cam-error:hover {
-  background: linear-gradient(180deg, #f43f5e 0%, #e11d48 100%);
-  transform: translateY(-1px);
-}
-
-.header-btn-cam-error:active {
-  transform: translateY(3px);
-  box-shadow: 0 0 0 #9d174d;
-}
-
-.header-btn-cam-prompt {
-  background: linear-gradient(180deg, #059669 0%, #047857 100%);
-  box-shadow: 0 3px 0 #064e3b, 0 4px 8px rgba(0, 0, 0, 0.4);
-}
-
-.header-btn-cam-prompt:hover {
-  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 0 #064e3b, 0 6px 12px rgba(0, 0, 0, 0.4);
-}
-
-.header-btn-cam-prompt:active {
-  transform: translateY(3px);
-  box-shadow: 0 0 0 #064e3b;
-}
-
-.header-btn-manual:hover {
-  background: linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 0 #5b21b6, 0 6px 12px rgba(139, 92, 246, 0.5);
-}
-
-.header-btn-manual:active {
-  transform: translateY(3px);
-  box-shadow: 0 0 0 #5b21b6;
-}
-
-.header-btn-audio {
-  background: linear-gradient(180deg, #059669 0%, #047857 100%);
-  box-shadow: 0 3px 0 #064e3b, 0 4px 8px rgba(5, 150, 105, 0.35);
-}
-
-.header-btn-audio:hover {
-  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
-  transform: translateY(-1px);
-}
-
-.header-btn-music {
-  background: linear-gradient(180deg, #d946ef 0%, #a21caf 100%);
-  box-shadow: 0 3px 0 #86198f, 0 4px 8px rgba(217, 70, 239, 0.35);
-}
-
-.header-btn-music:hover {
-  background: linear-gradient(180deg, #e879f9 0%, #c026d3 100%);
-  transform: translateY(-1px);
-}
-
-.header-btn-fullscreen {
-  background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
-  box-shadow: 0 3px 0 #075985, 0 4px 8px rgba(2, 132, 199, 0.35);
-}
-
-.header-btn-fullscreen:hover {
-  background: linear-gradient(180deg, #38bdf8 0%, #0284c7 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 0 #075985, 0 6px 12px rgba(56, 189, 248, 0.45);
-}
-
-.header-btn-fullscreen:active {
-  transform: translateY(3px);
-  box-shadow: 0 0 0 #075985;
-}
-
-/* Retro Keycaps */
-kbd {
-  background: #1e1338;
-  color: var(--neon-cyan);
-  border: 1px solid var(--neon-cyan);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.55rem;
-  box-shadow: 0 2px 0 rgba(0, 243, 255, 0.35);
-}
-
-/* Main Arcade Stage */
-.arcade-stage {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 20px;
-  width: 1260px;
-  height: 660px;
-}
-
-/* CRT Scanline Bezel Overlay */
-.crt-overlay {
-  position: relative;
-}
-
-.arcade-canvas-container {
-  touch-action: none;
-}
-
-.crt-overlay::after {
-  content: " ";
-  display: block;
-  position: absolute;
-  top: 0; left: 0; bottom: 0; right: 0;
-  background: 
-    linear-gradient(rgba(18, 16, 26, 0) 50%, rgba(0, 0, 0, 0.28) 50%),
-    linear-gradient(90deg, rgba(255, 0, 127, 0.02), rgba(0, 243, 255, 0.02), rgba(255, 230, 0, 0.02));
-  background-size: 100% 3px, 6px 100%;
-  pointer-events: none;
-  border-radius: inherit;
-  z-index: 10;
-}
-
-/* ==========================================================================
-   SETTINGS BOTTOM SHEET & TOGGLE SWITCH STYLES
-   ========================================================================== */
-
-@keyframes slideUpSheet {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-@keyframes fadeInToast {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -10px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-
-.settings-row {
-  min-height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid rgba(59, 23, 109, 0.4);
-  padding: 6px 0;
-}
-
-.settings-label {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  color: #ffffff;
-}
-
-.settings-action-btn {
-  height: 44px;
-  min-width: 90px;
-  background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
-  color: #ffffff;
-  border: none;
-  border-radius: 8px;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  box-shadow: 0 2px 0 #075985;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-}
-
-.mode-pill {
-  height: 36px;
-  padding: 0 8px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #94a3b8;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 10px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-}
-
-.mode-pill.active {
-  background: rgba(5, 78, 59, 0.9);
-  border-color: #39ff14;
-  color: #39ff14;
-  box-shadow: 0 0 8px rgba(57, 255, 20, 0.35);
-}
-
-/* Custom Accessible Toggle Switch */
-.toggle-switch {
-  width: 52px;
-  height: 32px;
-  border-radius: 16px;
-  background: #28114a;
-  border: 2px solid #5b21b6;
-  position: relative;
-  cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
-  padding: 0;
-  display: flex;
-  align-items: center;
-}
-
-.toggle-switch.active {
-  background: #059669;
-  border-color: #34d399;
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
-}
-
-.toggle-thumb {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #ffffff;
-  position: absolute;
-  left: 2px;
-  transition: transform 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
-}
-
-.toggle-switch.active .toggle-thumb {
-  transform: translateX(20px);
-}
-
-/* Start Overlay Mode Selector & Status */
-.start-mode-tabs {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-  margin-top: 4px;
-  background: rgba(10, 3, 24, 0.85);
-  padding: 4px;
-  border-radius: 10px;
-  border: 1px solid #3b176d;
-}
-
-.start-mode-tab {
-  flex: 1;
-  height: 44px;
-  min-height: 44px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #94a3b8;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 11px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-}
-
-.start-mode-tab.active {
-  background: rgba(5, 78, 59, 0.9);
-  border-color: #39ff14;
-  color: #39ff14;
-  box-shadow: 0 0 10px rgba(57, 255, 20, 0.35);
-}
-
-.start-status-line {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 4px 12px;
-  margin-top: 2px;
-  color: #cbd5e1;
-}
-
-/* ==========================================================================
-   MOBILE (PHONE) SPEC PART 2 LAYOUT (@media max-width: 600px)
-   ========================================================================== */
-
-@media (max-width: 600px) {
-  html, body {
-    height: 100%;
-    overscroll-behavior: none;
-    overflow: hidden;
-  }
-
-  .arcade-app {
-    display: flex;
-    flex-direction: column;
-    height: 100dvh;
-    width: 100vw;
-    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
-             env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-    overflow: hidden;
-    justify-content: flex-start;
-    align-items: stretch;
-  }
-
-  .arcade-viewport {
-    width: 100% !important;
-    height: 100% !important;
-    flex: 1 1 0% !important;
-    min-height: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    transform: none !important;
-  }
-
-  /* Section 4: Header (Title + Gear only, 48px) */
-  .arcade-header {
-    width: 100% !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    flex: 0 0 48px !important;
-    padding: 0 12px !important;
-    margin-bottom: 0 !important;
-    border-radius: 0 0 8px 8px !important;
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    flex-wrap: nowrap !important;
-    gap: 8px;
-  }
-
-  .brand-section {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    flex-shrink: 1;
-  }
-
-  .brand-title {
-    font-size: 14px !important;
-    letter-spacing: 0.5px;
-    white-space: nowrap !important;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Gear Button (44x44px target) */
-  .header-gear-btn {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    border-radius: 8px;
-    background: linear-gradient(180deg, #28114a 0%, #17072e 100%);
-    border: 1px solid #5b21b6;
-    color: #ffe600;
-    cursor: pointer;
-    box-shadow: 0 2px 0 #3b176d;
-    transition: all 0.1s ease;
-  }
-
-  .header-gear-btn:active {
-    transform: translateY(2px);
-    box-shadow: 0 0 0 #3b176d;
-  }
-
-  /* Section 2: Stage & Canvas Shell */
-  .arcade-stage {
-    width: 100% !important;
-    height: 100% !important;
-    flex: 1 1 0% !important;
-    min-height: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: stretch !important;
-    justify-content: flex-start !important;
-    gap: 0 !important;
-    position: relative !important;
-    overflow: hidden !important;
-  }
-
-  /* Section 3: Game Panel Fills All Remaining Height */
-  .game-panel {
-    position: relative !important;
-    width: 100% !important;
-    flex: 1 1 0% !important;
-    min-height: 0 !important;
-    height: 100% !important;
-    border-radius: 0 !important;
-    border: none !important;
-    overflow: hidden !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-  }
-
-  .game-panel canvas {
-    touch-action: none !important;
-    width: 100% !important;
-    height: 100% !important;
-    max-width: 100% !important;
-    max-height: 100% !important;
-    object-fit: contain !important;
-    display: block !important;
-  }
-
-  /* Section 6: Tilt-o-meter removed on mobile */
-  .tilt-meter,
-  .mobile-play-tilt {
-    display: none !important;
-  }
-
-  .is-playing .menu-only {
-    display: none !important;
-  }
-
-  /* Section 7: Start Overlay Positioning & Stacked Cards */
-  .start-overlay {
-    position: absolute;
-    inset: 0;
-    overflow-y: auto;
-    display: flex;
-    padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px)) 14px;
-    background: rgba(8, 2, 18, 0.94);
-    z-index: 20;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .start-inner {
-    margin: auto;
-    width: 100%;
-    max-width: 420px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .start-eyebrow {
-    font-size: 11px !important;
-    margin-bottom: 2px;
-  }
-
-  .start-title {
-    font-size: 26px !important;
-    white-space: nowrap !important;
-    letter-spacing: 2px !important;
-    margin: 0 !important;
-  }
-
-  .how-cards {
-    display: grid !important;
-    grid-template-columns: 1fr !important;
-    gap: 8px !important;
-    width: 100% !important;
-  }
-
-  .how-card {
-    display: grid !important;
-    grid-template-columns: 40px 1fr !important;
-    gap: 12px !important;
-    align-items: center !important;
-    text-align: left !important;
-    padding: 10px 12px !important;
-    background: rgba(23, 10, 48, 0.9) !important;
-    border: 1px solid #5b21b6 !important;
-    border-radius: 10px !important;
-  }
-
-  .how-card-icon {
-    font-size: 1.5rem !important;
-    text-align: center !important;
-  }
-
-  .how-card-title {
-    font-size: 12px !important;
-    font-weight: bold !important;
-    line-height: 1.3 !important;
-  }
-
-  .how-card-desc {
-    font-size: 13px !important;
-    line-height: 1.3 !important;
-    color: #cbd5e1 !important;
-  }
-
-  .btn-start {
-    width: 100% !important;
-    height: 52px !important;
-    white-space: nowrap !important;
-    font-size: 15px !important;
-    letter-spacing: 0.5px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    border-radius: 8px !important;
-  }
-
-  .btn-row-secondary {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
-    gap: 8px !important;
-    margin-top: 4px !important;
-    width: 100% !important;
-  }
-
-  .btn-row-secondary button {
-    height: 48px !important;
-    font-size: 12px !important;
-    border-radius: 8px !important;
-  }
-
-  .start-tip {
-    font-size: 12px !important;
-    line-height: 1.3 !important;
-    color: #94a3b8 !important;
-    margin-top: 4px;
-    text-align: center;
-  }
-}
-
-/* Landscape Phone Support (Section 12) */
-@media (max-height: 500px) and (orientation: landscape) {
-  .arcade-app {
-    height: 100dvh;
-    padding: 2px 8px;
-    overflow: hidden;
-  }
-
-  .arcade-header {
-    height: 36px !important;
-    min-height: 36px !important;
-    flex: 0 0 36px !important;
-    margin-bottom: 2px !important;
-  }
-
-  .brand-title {
-    font-size: 12px !important;
-  }
-
-  .header-gear-btn {
-    width: 36px !important;
-    height: 36px !important;
-    min-width: 36px !important;
-    min-height: 36px !important;
-    font-size: 16px !important;
-  }
-
-  .start-overlay {
-    padding: 8px 12px;
-  }
-
-  .how-cards {
-    grid-template-columns: repeat(3, 1fr) !important;
-    gap: 8px !important;
-  }
-}
+/* Keep setup, balance and all score counters within the cabinet's 660px height. */
+.balance-calibration { margin-top: 12px; padding-top: 10px; border-top: 1px solid #3b176d; }
+.balance-calibration .panel-heading { margin-bottom: 0; }
+.balance-calibration .panel-description { font-size: 14px; margin-top: 8px; }
+.flight-stats .secondary-action { min-height: 38px; margin-top: 12px; padding: 7px 10px; }
+.score-grid dt { font-size: 12px; }
+
+/* Give the score the remaining cabinet space, with one prominent main readout. */
+.flight-stats { flex: 1 0 auto; display: flex; flex-direction: column; }
+.flight-stats .score-grid { flex: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-content: stretch; }
+.flight-stats .score-grid > div { display: flex; flex-direction: column; justify-content: center; padding: 8px; }
+.flight-stats .score-grid > div:first-child { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; padding: 10px 12px; }
+.flight-stats .score-grid > div:first-child dt { margin-bottom: 0; color: #ffe600; }
+.flight-stats .score-grid dd { font-size: 14px; }
+.flight-stats .score-grid > div:first-child dd { font-size: 24px; letter-spacing: 1px; }

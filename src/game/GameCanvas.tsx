@@ -15,13 +15,13 @@ interface GameCanvasProps {
   isHandTrackingActive?: boolean;
   onOpenHowToPlay?: () => void;
   isMobile?: boolean;
-  controlMode?: 'GYRO' | 'HAND_CAM' | 'TOUCH';
-  onSelectControlMode?: (mode: 'GYRO' | 'HAND_CAM' | 'TOUCH') => void;
+  controlMode?: 'GYRO' | 'HAND_CAM' | 'TOUCH' | 'KEYBOARD';
+  onSelectControlMode?: (mode: 'GYRO' | 'HAND_CAM' | 'TOUCH' | 'KEYBOARD') => void;
   onCalibrateGyro?: () => void;
   onTouchTilt?: (dir: -1 | 0 | 1) => void;
   gyroAvailable?: boolean;
   gyroPermissionRequired?: boolean;
-  onRequestGyroPermission?: () => void;
+  onRequestGyroPermission?: () => Promise<boolean>;
   cameraActive?: boolean;
   cameraError?: string | null;
   onStartCamera?: () => Promise<boolean>;
@@ -58,7 +58,6 @@ export const GameCanvas = React.memo<GameCanvasProps>(
     onRestart,
     onTogglePause,
     isHandTrackingActive = false,
-    onOpenHowToPlay,
     isMobile = false,
     controlMode = 'HAND_CAM',
     onSelectControlMode,
@@ -1223,7 +1222,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
         className="arcade-canvas-container crt-overlay game-panel"
         style={{
           position: 'relative',
-          width: isMobile ? '100%' : '780px',
+          width: isMobile ? '100%' : '920px',
           height: isMobile ? '100%' : '660px',
           borderRadius: '16px',
           overflow: 'hidden',
@@ -1235,13 +1234,14 @@ export const GameCanvas = React.memo<GameCanvasProps>(
       >
         <canvas
           ref={canvasRef}
-          width={780}
+          width={isMobile ? 780 : 920}
           height={660}
           style={{ display: 'block', touchAction: 'none' }}
           onPointerDown={(e) => {
-            if (isMobile && (gameState === 'PLAYING' || gameState === 'COUNTDOWN') && onTouchTilt) {
+            if (isMobile && controlMode === 'TOUCH' && (gameState === 'PLAYING' || gameState === 'COUNTDOWN') && onTouchTilt) {
               const rect = e.currentTarget.getBoundingClientRect();
               const relX = e.clientX - rect.left;
+              e.currentTarget.setPointerCapture(e.pointerId);
               onTouchTilt(relX < rect.width / 2 ? -1 : 1);
             }
           }}
@@ -1257,7 +1257,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
         />
 
         {/* Desktop Retro Arcade Playfield HUD */}
-        {!isMobile && (
+        {!isMobile && (gameState === 'PLAYING' || gameState === 'COUNTDOWN' || gameState === 'PAUSED') && (
           <div
             style={{
               position: 'absolute',
@@ -1550,7 +1550,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
             }}
           >
             <button
-              onPointerDown={() => onTouchTilt(-1)}
+              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); onTouchTilt(-1); }}
               onPointerUp={() => onTouchTilt(0)}
               onPointerCancel={() => onTouchTilt(0)}
               style={{
@@ -1569,7 +1569,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
               ◀ TILT LEFT
             </button>
             <button
-              onPointerDown={() => onTouchTilt(1)}
+              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); onTouchTilt(1); }}
               onPointerUp={() => onTouchTilt(0)}
               onPointerCancel={() => onTouchTilt(0)}
               style={{
@@ -1590,308 +1590,66 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           </div>
         )}
 
-        {/* Section 4: Start / Attract Mode Screen */}
-        {gameState !== 'PLAYING' &&
-          gameState !== 'COUNTDOWN' &&
-          gameState !== 'PAUSED' &&
-          gameState !== 'GAME_OVER' && (
-            <div className="start-overlay">
-              <div className="start-inner">
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
-                  <div
-                    className="start-eyebrow"
-                    style={{
-                      fontFamily: "'Press Start 2P', monospace",
-                      fontSize: '0.62rem',
-                      letterSpacing: '2px',
-                      color: '#ffe600',
-                      textShadow: '0 0 8px rgba(255, 230, 0, 0.6)',
-                    }}
-                  >
-                    ★ 1983 ARCADE REVIVAL ★
-                  </div>
-                  <h1
-                    className="start-title"
-                    style={{
-                      fontFamily: "'Press Start 2P', monospace",
-                      fontSize: '1.9rem',
-                      letterSpacing: '3px',
-                      color: '#ffffff',
-                      margin: 0,
-                      textShadow: '0 0 10px #00f3ff, 0 0 20px #ff007f',
-                    }}
-                  >
-                    SKYWARD ROLL
-                  </h1>
-                </div>
-
-                {/* 3 Step Tutorial Cards (Stacked on phone, 3-col on desktop) */}
-                <div className="how-cards">
-                  <div className="how-card">
-                    <div className="how-card-icon">
-                      {controlMode === 'GYRO' ? '📱' : controlMode === 'TOUCH' ? '👆' : '👐'}
-                    </div>
-                    <div>
-                      <div className="how-card-title" style={{ color: '#00f3ff' }}>
-                        {controlMode === 'GYRO'
-                          ? '1. HOLD PHONE'
-                          : controlMode === 'TOUCH'
-                          ? '1. THUMB PADS'
-                          : '1. HANDS UP'}
-                      </div>
-                      <div className="how-card-desc">
-                        {controlMode === 'GYRO'
-                          ? 'Hold your phone level in both hands'
-                          : controlMode === 'TOUCH'
-                          ? 'Touch and hold left or right to tilt'
-                          : 'Hold both hands in camera view'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="how-card">
-                    <div className="how-card-icon">⚖️</div>
-                    <div>
-                      <div className="how-card-title" style={{ color: '#39ff14' }}>
-                        2. TILT TO ROLL
-                      </div>
-                      <div className="how-card-desc">
-                        {controlMode === 'GYRO'
-                          ? 'Tilt phone left/right to balance & dodge pits'
-                          : controlMode === 'TOUCH'
-                          ? 'Tap left/right pads to balance & steer'
-                          : 'Raise left or right to balance & dodge pits'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="how-card">
-                    <div className="how-card-icon">⭐</div>
-                    <div>
-                      <div className="how-card-title" style={{ color: '#ffe600' }}>
-                        3. HIT WARPS
-                      </div>
-                      <div className="how-card-desc">
-                        Jump ahead +7m and escape rising lava!
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Mode Segmented Tabs inside Start Overlay */}
-                <div className="start-mode-tabs">
-                  <button
-                    type="button"
-                    className={`start-mode-tab ${controlMode === 'GYRO' ? 'active' : ''}`}
-                    onClick={() => {
-                      onSelectControlMode?.('GYRO');
-                      if (gyroPermissionRequired) onRequestGyroPermission?.();
-                    }}
-                  >
-                    📱 GYRO
-                  </button>
-                  <button
-                    type="button"
-                    className={`start-mode-tab ${controlMode === 'TOUCH' ? 'active' : ''}`}
-                    onClick={() => onSelectControlMode?.('TOUCH')}
-                  >
-                    👆 TOUCH
-                  </button>
-                  <button
-                    type="button"
-                    className={`start-mode-tab ${controlMode === 'HAND_CAM' ? 'active' : ''}`}
-                    onClick={() => {
-                      onSelectControlMode?.('HAND_CAM');
-                      if (!cameraActive) {
-                        onStartCamera?.().then((active) => {
-                          if (!active) onOpenCamModal?.();
-                        });
-                      }
-                    }}
-                  >
-                    📷 CAM
-                  </button>
-                </div>
-
-                {/* Status Indicator Line */}
-                <div className="start-status-line">
-                  {controlMode === 'GYRO' ? (
-                    gyroAvailable ? (
-                      <>
-                        <span style={{ color: '#39ff14', fontSize: '13px' }}>●</span>
-                        <span>Gyro ready</span>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{ color: '#f59e0b', fontSize: '13px' }}>●</span>
-                        <span>Gyro unavailable, using Touch</span>
-                      </>
-                    )
-                  ) : controlMode === 'TOUCH' ? (
-                    <>
-                      <span style={{ color: '#39ff14', fontSize: '13px' }}>●</span>
-                      <span>Touch steering ready</span>
-                    </>
-                  ) : cameraActive ? (
-                    <>
-                      <span style={{ color: '#39ff14', fontSize: '13px' }}>●</span>
-                      <span>Camera tracking active</span>
-                    </>
-                  ) : cameraError ? (
-                    <>
-                      <span style={{ color: '#ff007f', fontSize: '13px' }}>⚠️</span>
-                      <span>Camera access blocked</span>
-                    </>
-                  ) : (
-                    <>
-                      <span style={{ color: '#00f3ff', fontSize: '13px' }}>📷</span>
-                      <span>Camera permission needed</span>
-                    </>
-                  )}
-                </div>
-
-                {/* Action Buttons: Calibrate & Start full width, 52px tall */}
-                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px' }}>
-                  <button
-                    className="btn-start"
-                    onClick={() => {
-                      if (controlMode === 'GYRO') {
-                        if (gyroPermissionRequired) {
-                          onRequestGyroPermission?.();
-                        }
-                        onCalibrateGyro?.();
-                        onStartGame();
-                      } else if (controlMode === 'TOUCH') {
-                        onStartGame();
-                      } else {
-                        // Hand Cam mode: if camera is active, start with calibration; if camera is off, start immediately with keyboard
-                        if (cameraActive) {
-                          onStartGame();
-                        } else {
-                          onSkipCalibrationAndStart();
-                        }
-                      }
-                    }}
-                    style={{
-                      background: 'linear-gradient(180deg, #10b981 0%, #047857 100%)',
-                      color: '#ffffff',
-                      border: 'none',
-                      padding: '14px 28px',
-                      fontFamily: "'Press Start 2P', monospace",
-                      fontSize: '0.85rem',
-                      letterSpacing: '0.5px',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 0 #065f46, 0 0 20px rgba(16, 185, 129, 0.6)',
-                      transition: 'all 0.08s ease',
-                      width: '100%',
-                    }}
-                  >
-                    {controlMode === 'GYRO'
-                      ? '★ START GAME ★'
-                      : controlMode === 'TOUCH'
-                      ? '★ START GAME ★'
-                      : !cameraActive
-                      ? '★ START GAME ★'
-                      : isCalibrated
-                      ? '★ START GAME ★'
-                      : '★ CALIBRATE & START ★'}
-                  </button>
-
-                  <div className="btn-row-secondary">
-                    {controlMode === 'GYRO' ? (
-                      <button
-                        onClick={onCalibrateGyro}
-                        style={{
-                          background: 'linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%)',
-                          color: '#ffffff',
-                          border: 'none',
-                          padding: '12px 16px',
-                          fontFamily: "'Press Start 2P', monospace",
-                          fontSize: '0.65rem',
-                          letterSpacing: '0.5px',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          boxShadow: '0 4px 0 #1e3a8a',
-                        }}
-                      >
-                        ⚖️ ZERO LEVEL
-                      </button>
-                    ) : controlMode === 'HAND_CAM' && !cameraActive ? (
-                      <button
-                        onClick={() => {
-                          onStartCamera?.().then((active) => {
-                            if (!active) onOpenCamModal?.();
-                          });
-                        }}
-                        style={{
-                          background: 'linear-gradient(180deg, #0284c7 0%, #0369a1 100%)',
-                          color: '#ffffff',
-                          border: 'none',
-                          padding: '12px 16px',
-                          fontFamily: "'Press Start 2P', monospace",
-                          fontSize: '0.65rem',
-                          letterSpacing: '0.5px',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          boxShadow: '0 4px 0 #075985',
-                        }}
-                      >
-                        📷 ENABLE CAMERA
-                      </button>
-                    ) : (
-                      <button
-                        onClick={onSkipCalibrationAndStart}
-                        style={{
-                          background: 'linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%)',
-                          color: '#ffffff',
-                          border: 'none',
-                          padding: '12px 16px',
-                          fontFamily: "'Press Start 2P', monospace",
-                          fontSize: '0.65rem',
-                          letterSpacing: '0.5px',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          boxShadow: '0 4px 0 #1e3a8a',
-                        }}
-                      >
-                        ⚡ QUICK PLAY
-                      </button>
-                    )}
-                    {onOpenHowToPlay && (
-                      <button
-                        onClick={onOpenHowToPlay}
-                        style={{
-                          background: 'linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%)',
-                          color: '#ffffff',
-                          border: 'none',
-                          padding: '12px 16px',
-                          fontFamily: "'Press Start 2P', monospace",
-                          fontSize: '0.65rem',
-                          letterSpacing: '0.5px',
-                          borderRadius: '8px',
-                          cursor: 'pointer',
-                          boxShadow: '0 4px 0 #5b21b6',
-                        }}
-                      >
-                        📖 MANUAL
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="start-tip">
-                  {controlMode === 'GYRO'
-                    ? 'Tip: Keep phone level at start or tap Zero Level.'
-                    : controlMode === 'TOUCH'
-                    ? 'Tip: Use thumb buttons at bottom of screen to steer.'
-                    : !cameraActive
-                    ? 'Tip: Steer using ← → Arrow Keys or A / D keys (or click Enable Camera for hand tracking)!'
-                    : 'Tip: Show open palm ✋ to camera or press Space to pause.'}
-                </div>
+        {/* One device-appropriate control choice and one primary action. */}
+        {['CALIBRATING', 'READY'].includes(gameState) && (
+          <div className="start-overlay">
+            <div className="start-inner">
+              <span className="start-eyebrow">★ ENDLESS ARCADE SURVIVAL ★</span>
+              <h1 className="start-title">SKYWARD ROLL</h1>
+              <p className="start-objective">Balance the ball. Beat the rising lava.</p>
+              <div className="how-cards">
+                <div className="how-card"><span className="how-card-icon">{controlMode === 'KEYBOARD' ? '⌨️' : controlMode === 'TOUCH' ? '👆' : controlMode === 'GYRO' ? '📱' : '👐'}</span><h2 className="how-card-title">1. TAKE CONTROL</h2><p className="how-card-desc">{controlMode === 'KEYBOARD' ? 'Arrow keys or A / D to steer' : controlMode === 'TOUCH' ? 'Hold either side to steer' : controlMode === 'GYRO' ? 'Tilt your phone to steer' : 'Raise your hands to steer'}</p></div>
+                <div className="how-card"><span className="how-card-icon">⚖️</span><h2 className="how-card-title">2. STAY BALANCED</h2><p className="how-card-desc">Keep rolling and dodge the red holes</p></div>
+                <div className="how-card"><span className="how-card-icon">⭐</span><h2 className="how-card-title">3. CATCH WARPS</h2><p className="how-card-desc">Jump +7m and escape the lava</p></div>
               </div>
+              <fieldset className="control-picker">
+                <legend>Choose your controls</legend>
+                <div className="start-mode-tabs">
+                  {(isMobile ? [
+                    { mode: 'TOUCH' as const, label: 'Touch', icon: '◉' },
+                    { mode: 'GYRO' as const, label: 'Phone tilt', icon: '◇' },
+                    { mode: 'HAND_CAM' as const, label: 'Camera', icon: '◎' },
+                  ] : [
+                    { mode: 'KEYBOARD' as const, label: 'Keyboard', icon: '⌨' },
+                    { mode: 'HAND_CAM' as const, label: 'Camera', icon: '◎' },
+                  ]).map(({ mode, label, icon }) => (
+                    <button key={mode} type="button" className={`start-mode-tab ${controlMode === mode ? 'active' : ''}`}
+                      aria-pressed={controlMode === mode} disabled={mode === 'GYRO' && !gyroAvailable}
+                      onClick={() => onSelectControlMode?.(mode)}>
+                      <span aria-hidden="true">{icon}</span>{label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="control-instruction visually-hidden">
+                {controlMode === 'KEYBOARD' ? <><kbd>←</kbd><kbd>→</kbd><span>or A / D to tilt the bar.</span></>
+                  : controlMode === 'TOUCH' ? <p>Hold the left or right side of the screen to steer.</p>
+                  : controlMode === 'GYRO' ? <p>Hold your phone comfortably. Tilt left or right to steer.</p>
+                  : <p>Hold both hands in view. Raise one hand to tilt the bar.</p>}
+              </div>
+              {isMobile && controlMode === 'HAND_CAM' && (
+                <p className="setup-status" role="status">{cameraError ? cameraError : !cameraActive ? 'Enable your camera to use hand controls.' : !isHandTrackingActive ? 'Camera on · Waiting for hands' : isCalibrated ? 'Hands detected · Calibrated' : 'Hands detected · Hold level to calibrate'}</p>
+              )}
+              <button className="btn-start" onClick={async () => {
+                if (controlMode === 'HAND_CAM' && !cameraActive) {
+                  const active = await onStartCamera?.();
+                  if (!active) onOpenCamModal?.();
+                  return;
+                }
+                if (controlMode === 'GYRO') {
+                  if (!gyroAvailable) return;
+                  if (gyroPermissionRequired && !(await onRequestGyroPermission?.())) return;
+                  onCalibrateGyro?.();
+                }
+                if (controlMode === 'KEYBOARD' || controlMode === 'TOUCH') onSkipCalibrationAndStart();
+                else onStartGame();
+              }} disabled={controlMode === 'HAND_CAM' && cameraActive && (!isHandTrackingActive || !isCalibrated)}>
+                {controlMode === 'HAND_CAM' && !cameraActive ? 'Enable camera' : controlMode === 'HAND_CAM' && (!isHandTrackingActive || !isCalibrated) ? 'WAITING FOR HANDS' : '★ START GAME ★'}
+              </button>
+              <p className="start-tip">{controlMode === 'HAND_CAM' ? 'Show one open palm to pause. Space works too.' : isMobile ? 'Use the pause button whenever you need a break.' : 'Space to pause · R to restart'}</p>
             </div>
-          )}
+          </div>
+        )}
 
         {/* Paused Overlay */}
         {gameState === 'PAUSED' && (
@@ -2144,10 +1902,8 @@ export const GameCanvas = React.memo<GameCanvasProps>(
     );
   },
   (prev, next) => {
-    if (prev.tiltAngleRad !== next.tiltAngleRad) {
-      next.engine.setTiltAngle(next.tiltAngleRad);
-    }
     return (
+      prev.tiltAngleRad === next.tiltAngleRad &&
       prev.isCalibrated === next.isCalibrated &&
       prev.isHandLockActive === next.isHandLockActive &&
       prev.engine === next.engine &&
@@ -2165,7 +1921,10 @@ export const GameCanvas = React.memo<GameCanvasProps>(
       prev.gyroAvailable === next.gyroAvailable &&
       prev.gyroPermissionRequired === next.gyroPermissionRequired &&
       prev.cameraActive === next.cameraActive &&
-      prev.cameraError === next.cameraError
+      prev.cameraError === next.cameraError &&
+      prev.onStartCamera === next.onStartCamera &&
+      prev.onOpenCamModal === next.onOpenCamModal &&
+      prev.onRequestGyroPermission === next.onRequestGyroPermission
     );
   }
 );
