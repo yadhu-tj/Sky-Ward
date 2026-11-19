@@ -1,6 +1,6 @@
 # Tracking startup stages and replacement assessment
 
-The loading screen now measures actual asset downloads before asking MediaPipe to initialize. Downloads are requested in parallel and use the browser cache. The original runtime filenames, gzip encoding, and versioned cache paths remain intact.
+The loading screen measures actual asset downloads before asking MediaPipe to initialize. A labeled 30-second loading window counts backward, then shows Still Loading; this is not a completion estimate. Camera-ready waiting does not run the timer. Downloads are requested in parallel and use the browser cache. The original runtime filenames, gzip encoding, and versioned cache paths remain intact.
 
 Stages are: download tracker files, prepare runtime/model, enable camera (if necessary), check first frame, ready. File progress counts completed files, not bytes; no synthetic percentage or estimated completion time is shown. A one-click Touch/Keyboard fallback is available throughout loading. After 15 seconds the screen explicitly suggests that fallback. The existing 30-second slow-start message remains.
 

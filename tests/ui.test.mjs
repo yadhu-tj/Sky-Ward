@@ -155,3 +155,12 @@ test('startup shows real download progress and an immediate keyboard fallback', 
   assert.match(html, /2\/6 files/);
   assert.match(html, /Play with Keyboard/);
 });
+
+
+test('loading timer starts with a thirty-second backward loading window', () => {
+  const html = renderToStaticMarkup(React.createElement(trackerStartup.TrackerStartup, {
+    progress: { stage: 'preparing', startedAt: 1, completed: 6, total: 6 }, mobile: false, onFallback() {},
+  }));
+  assert.match(html, />30s</);
+  assert.match(html, /tracker-fallback/);
+});

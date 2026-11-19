@@ -324,3 +324,18 @@ body { background: radial-gradient(circle at 40% 15%, #2b104740, transparent 60%
 .tracker-startup p { margin-top: 10px; color: #b7a5ca; font-size: 13px; line-height: 1.5; }
 .tracker-startup .secondary-action { min-height: 44px; justify-content: center; color: #b2f5d2; border-color: #27845b; }
 .tracker-startup .tracker-slow-note { color: #ffe184; }
+
+/* Compact loading card keeps the camera action within the cabinet. */
+.tracker-startup { padding: 10px 12px; }
+.tracker-startup-heading { font-size: 13px; gap: 8px; }
+.tracker-startup-heading > span { flex-shrink: 0; font-size: 12px; }
+.tracker-startup progress { margin-top: 8px; height: 4px; }
+.tracker-startup-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.tracker-startup-footer p { margin: 0; font-size: 12px; line-height: 1.4; }
+.tracker-fallback { flex-shrink: 0; padding: 7px 10px; min-height: 34px; border: 1px solid #427859; border-radius: 6px; color: #b2f5d2; background: #103326; font-size: 12px; }
+.tracker-fallback:hover { background: #194934; }
+@media (max-width: 600px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .tracker-fallback { min-height: 44px; padding-inline: 8px; }
+  .tracker-startup-footer { gap: 8px; }
+  .start-inner { gap: 12px; }
+}
