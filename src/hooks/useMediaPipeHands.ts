@@ -2,13 +2,55 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import * as mpHands from '@mediapipe/hands';
 import type { Hands as HandsInstance, Results } from '@mediapipe/hands';
 
-function getMediaPipeHandsBaseUrl(): string {
+const MEDIAPIPE_HANDS_VERSION = '0.4.1675469240';
+const MEDIAPIPE_FALLBACK_BASES = [
+  `https://cdn.jsdelivr.net/npm/@mediapipe/hands@${MEDIAPIPE_HANDS_VERSION}`,
+  `https://unpkg.com/@mediapipe/hands@${MEDIAPIPE_HANDS_VERSION}`,
+];
+
+function getSameOriginMediaPipeBaseUrl(): string {
   const base = import.meta.env.BASE_URL || '/';
   const normalizedBase = base.endsWith('/') ? base : `${base}/`;
   if (typeof window !== 'undefined' && window.location?.origin) {
     return `${window.location.origin}${normalizedBase}mediapipe/hands`;
   }
   return `${normalizedBase}mediapipe/hands`;
+}
+
+function getCandidateBaseUrls(): string[] {
+  return [getSameOriginMediaPipeBaseUrl(), ...MEDIAPIPE_FALLBACK_BASES];
+}
+
+async function isBaseUrlReachable(baseUrl: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl}/hands.binarypb`, { method: 'GET' });
+    if (!res.ok) return false;
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('text/html')) return false;
+    const buf = await res.arrayBuffer();
+    return buf.byteLength > 100;
+  } catch {
+    return false;
+  }
+}
+
+let resolvedBaseUrlPromise: Promise<string> | null = null;
+
+function resolveMediaPipeBaseUrl(): Promise<string> {
+  if (!resolvedBaseUrlPromise) {
+    resolvedBaseUrlPromise = (async () => {
+      const candidates = getCandidateBaseUrls();
+      for (const baseUrl of candidates) {
+        if (await isBaseUrlReachable(baseUrl)) {
+          return baseUrl;
+        }
+      }
+      // If all probes failed (e.g. opaque CORS), reset cache so future mounts can retry
+      resolvedBaseUrlPromise = null;
+      return candidates[0];
+    })();
+  }
+  return resolvedBaseUrlPromise;
 }
 
 type HandsConstructor = new (config?: {
@@ -27,36 +69,48 @@ function resolveHandsConstructor(): HandsConstructor | null {
   return typeof ctor === 'function' ? ctor : null;
 }
 
+function loadScriptFromUrl(scriptSrc: string): Promise<HandsConstructor | null> {
+  return new Promise((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${scriptSrc}"]`);
+    if (existing) {
+      const already = resolveHandsConstructor();
+      if (already) {
+        resolve(already);
+        return;
+      }
+      existing.addEventListener('load', () => resolve(resolveHandsConstructor()), { once: true });
+      existing.addEventListener('error', () => resolve(null), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = scriptSrc;
+    script.async = true;
+    script.onload = () => resolve(resolveHandsConstructor());
+    script.onerror = () => {
+      script.remove();
+      resolve(null);
+    };
+    document.head.appendChild(script);
+  });
+}
+
 let handsScriptPromise: Promise<HandsConstructor | null> | null = null;
 
-function loadHandsConstructor(): Promise<HandsConstructor | null> {
+function loadHandsConstructor(preferredBaseUrl: string): Promise<HandsConstructor | null> {
   const immediate = resolveHandsConstructor();
   if (immediate) return Promise.resolve(immediate);
   if (typeof document === 'undefined') return Promise.resolve(null);
 
-  const scriptSrc = `${getMediaPipeHandsBaseUrl()}/hands.js`;
-
   if (!handsScriptPromise) {
-    handsScriptPromise = new Promise((resolve) => {
-      const existing = document.querySelector<HTMLScriptElement>(
-        `script[src="${scriptSrc}"]`
-      );
-      if (existing) {
-        existing.addEventListener('load', () => resolve(resolveHandsConstructor()), { once: true });
-        existing.addEventListener('error', () => resolve(null), { once: true });
-        return;
+    const orderedBases = Array.from(new Set([preferredBaseUrl, ...getCandidateBaseUrls()]));
+    handsScriptPromise = (async () => {
+      for (const baseUrl of orderedBases) {
+        const ctor = await loadScriptFromUrl(`${baseUrl}/hands.js`);
+        if (ctor) return ctor;
       }
-      const script = document.createElement('script');
-      script.src = scriptSrc;
-      script.async = true;
-      script.onload = () => resolve(resolveHandsConstructor());
-      script.onerror = () => {
-        handsScriptPromise = null;
-        script.remove();
-        resolve(null);
-      };
-      document.head.appendChild(script);
-    });
+      handsScriptPromise = null;
+      return null;
+    })();
   }
   return handsScriptPromise;
 }
@@ -227,13 +281,15 @@ export function useMediaPipeHands(
 
     const initHands = async () => {
       try {
-        const HandsCtor = await loadHandsConstructor();
+        const handsBaseUrl = await resolveMediaPipeBaseUrl();
+        if (cancelled || !isMountedRef.current) return;
+
+        const HandsCtor = await loadHandsConstructor(handsBaseUrl);
         if (cancelled || !isMountedRef.current) return;
         if (!HandsCtor) {
           throw new Error('MediaPipe Hands constructor unavailable');
         }
 
-        const handsBaseUrl = getMediaPipeHandsBaseUrl();
         const hands = new HandsCtor({
           locateFile: (file) => `${handsBaseUrl}/${file}`,
         });

@@ -148,12 +148,8 @@ class BackgroundMusicEngine {
 
   public setMode(mode: MusicMode): void {
     this.targetMode = mode;
-    this.initContext();
 
-    if (!this.isRunning && !this.isMutedState) {
-      this.start();
-    }
-
+    // Do not create/resume AudioContext before an explicit user gesture calls start().
     if (!this.ctx || !this.pauseFilter || !this.masterGain) return;
     const now = this.ctx.currentTime;
 
@@ -182,9 +178,8 @@ class BackgroundMusicEngine {
   private scheduler(): void {
     if (!this.ctx || !this.pauseFilter || !this.isRunning) return;
 
-    // If context was suspended, try to resume
+    // Wait for a user gesture to resume suspended context instead of spamming resume() every 25ms
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => {});
       return;
     }
 
