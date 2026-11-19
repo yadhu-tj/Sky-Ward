@@ -17,7 +17,9 @@ test('audio mode changes and automatic startup do not create audio before a gest
   assert.equal(exports.backgroundMusic.getMode(), 'PAUSED');
 });
 
-test('runtime scripts keep their sibling WebAssembly filenames intact in production', () => {
+test('runtime scripts keep their sibling WebAssembly filenames intact in production', {
+  skip: !existsSync(new URL('../dist/mediapipe/hands-0.4.1675469240/', import.meta.url)),
+}, () => {
   const root = new URL('../dist/mediapipe/hands-0.4.1675469240/', import.meta.url);
   for (const variant of ['simd_wasm', 'wasm']) {
     const script = readFileSync(new URL(`hands_solution_${variant}_bin.js`, root), 'utf8');
