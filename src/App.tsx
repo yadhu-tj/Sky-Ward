@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useMediaPipeHands } from './hooks/useMediaPipeHands';
 import type { HandLandmarks } from './hooks/useMediaPipeHands';
 import { TiltPipeline, DEFAULT_TILT_CONFIG } from './input/tiltController';
+import { SingleHandController } from './input/singleHandController';
+import { HandAutoStart } from './input/handAutoStart';
 import type { TiltDebugState } from './input/tiltController';
 import { GameEngine } from './game/GameEngine';
 import { GameCanvas } from './game/GameCanvas';
@@ -44,7 +46,14 @@ const INITIAL_DEBUG_STATE: TiltDebugState = {
 
 function App() {
   const pipelineRef = useRef<TiltPipeline>(new TiltPipeline(DEFAULT_TILT_CONFIG));
-  const engineRef = useRef<GameEngine>(new GameEngine());
+  const [engine] = useState(() => new GameEngine());
+  const engineRef = useRef(engine);
+  const singleHandRef = useRef(new SingleHandController());
+  const autoStartRef = useRef(new HandAutoStart());
+  const liveHandReadyRef = useRef(false);
+  const lastHandFrameRef = useRef(-Infinity);
+  const uiBlockedRef = useRef(false);
+  const [trackingLostPause, setTrackingLostPause] = useState(false);
   const [debugState, setDebugState] = useState<TiltDebugState>(INITIAL_DEBUG_STATE);
   const [keyboardAngleRad, setKeyboardAngleRad] = useState<number | null>(null);
   const [engineState, setEngineState] = useState(engineRef.current.state);
@@ -63,15 +72,12 @@ function App() {
     return window.innerHeight > window.innerWidth;
   });
 
+  const isMobileRef = useRef(isMobile);
+  isMobileRef.current = isMobile;
   const gyro = useDeviceOrientation();
 
-  // On physical mobile devices, default to GYRO for ergonomic handheld play; on desktop default to HAND_CAM
-  const [controlMode, setControlMode] = useState<ControlMode>(() => {
-    if (typeof window !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) {
-      return 'GYRO';
-    }
-    return 'HAND_CAM';
-  });
+  // Camera motion is the primary experience; touch and phone tilt remain fallbacks.
+  const [controlMode, setControlMode] = useState<ControlMode>('HAND_CAM');
 
   const controlModeRef = useRef(controlMode);
   controlModeRef.current = controlMode;
@@ -94,6 +100,7 @@ function App() {
   }, []);
 
   const handleOpenHowToPlay = useCallback(() => {
+    if (engineRef.current.state === 'PLAYING') engineRef.current.pause();
     setIsHowToPlayOpen(true);
   }, []);
 
@@ -179,6 +186,9 @@ function App() {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (uiBlockedRef.current || target?.isContentEditable || target?.closest('input, textarea, select')) return;
+      if ((e.code === 'Space' || e.key === 'Enter') && target?.closest('button, [role="button"]')) return;
       if (
         e.key === 'ArrowLeft' ||
         e.key === 'ArrowRight' ||
@@ -188,7 +198,7 @@ function App() {
         e.key === 'D'
       ) {
         e.preventDefault();
-        pressedKeysRef.current.add(e.key);
+        pressedKeysRef.current.add(e.code || e.key.toLowerCase());
         syncKeyboardAngle();
 
         // If player presses arrow/steering keys on start screen, auto-start immediately!
@@ -213,10 +223,12 @@ function App() {
           handleSkipCalibrationAndStartRef.current?.();
         }
       } else if (e.key.toLowerCase() === 'r') {
+        if (e.repeat) return;
         handleSkipCalibrationAndStartRef.current?.();
       } else if (e.key.toLowerCase() === 'c') {
         // Quick Re-Lock Hand Anchor posture mid-game without pausing!
         pipelineRef.current.resetCalibration();
+        singleHandRef.current.resetCalibration();
         setDebugState((prev) => ({
           ...prev,
           isCalibrating: true,
@@ -237,7 +249,7 @@ function App() {
         e.key === 'd' ||
         e.key === 'D'
       ) {
-        pressedKeysRef.current.delete(e.key);
+        pressedKeysRef.current.delete(e.code || e.key.toLowerCase());
         syncKeyboardAngle();
       }
     };
@@ -249,11 +261,19 @@ function App() {
       touchDirectionRef.current = 0;
       setTouchDirection(0);
       engineRef.current.setTiltAngle(0);
+      engineRef.current.pause();
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') return;
+      clearHeldInput();
+      if (engineRef.current.state === 'COUNTDOWN') { engineRef.current.countdownTimer = 0; engineRef.current.changeState('READY'); }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('blur', clearHeldInput);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('blur', clearHeldInput);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
@@ -265,7 +285,15 @@ function App() {
 
   const handleLandmarks = useCallback((landmarks: HandLandmarks, isOpenPalm: boolean) => {
     if (controlModeRef.current !== 'HAND_CAM') return;
-    const nextState = pipelineRef.current.process(landmarks, isOpenPalm);
+    const video = videoRef.current;
+    const aspect = video?.videoWidth && video?.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9;
+    const nextState = isMobileRef.current
+      ? singleHandRef.current.process(landmarks, performance.now(), aspect)
+      : pipelineRef.current.process(landmarks, isOpenPalm);
+
+    liveHandReadyRef.current = nextState.isCalibrated && nextState.isHandTrackingActive &&
+      (isMobileRef.current ? !!(landmarks.left || landmarks.right) : !!(landmarks.left && landmarks.right));
+    lastHandFrameRef.current = performance.now();
 
     // Sync tilt directly to engine at full 60fps with zero React overhead
     if (!keyboardAngleRadRef.current && touchDirectionRef.current === 0) {
@@ -273,7 +301,7 @@ function App() {
     }
 
     // Two-way Open Palm gesture: pauses when PLAYING and resumes when PAUSED!
-    if (nextState.palmPauseTriggered) {
+    if (!isMobileRef.current && nextState.palmPauseTriggered) {
       if (engineRef.current.state === 'PLAYING') {
         pipelineRef.current.lockoutPauseGesture(60);
         soundEffects.playPause();
@@ -310,15 +338,62 @@ function App() {
 
   const {
     videoRef,
+    bindVideo,
     isReady: isCameraReady,
     cameraActive,
     cameraError,
     startCamera,
     stopCamera,
-  } = useMediaPipeHands(handleLandmarks);
+  } = useMediaPipeHands(handleLandmarks, isMobile);
+
+  useEffect(() => {
+    if (isMobile && controlMode === 'HAND_CAM') {
+      singleHandRef.current.resetCalibration();
+      lastDebugStateRef.current = INITIAL_DEBUG_STATE;
+      setDebugState(INITIAL_DEBUG_STATE);
+      if (engineRef.current.state === 'PLAYING') {
+        setTrackingLostPause(true);
+        engineRef.current.pause();
+      }
+    }
+  }, [isMobile, controlMode]);
+
+  useEffect(() => {
+    if (controlMode !== 'HAND_CAM' && cameraActive) stopCamera();
+  }, [controlMode, cameraActive, stopCamera]);
+
+  useEffect(() => {
+    if (controlMode === 'HAND_CAM' && !cameraActive) engineRef.current.pause();
+  }, [controlMode, cameraActive]);
+
+  // Also catches stalled camera inference, where no further landmark frames arrive.
+  useEffect(() => {
+    if (!isMobile || controlMode !== 'HAND_CAM') return;
+    const id = window.setInterval(() => {
+      if (engineRef.current.state !== 'PLAYING') return;
+      const now = performance.now();
+      if (singleHandRef.current.trackingAge(now) > 150) {
+        engineRef.current.setTiltAngle(singleHandRef.current.heldAngleRad(now));
+      }
+      if (singleHandRef.current.shouldPause(now)) {
+        const lostState = { ...lastDebugStateRef.current, isHandTrackingActive: false, finalAngleDeg: 0, finalAngleRad: 0 };
+        lastDebugStateRef.current = lostState;
+        setDebugState(lostState);
+        setTrackingLostPause(true);
+        engineRef.current.pause();
+      }
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [isMobile, controlMode]);
 
   const [isCameraModalOpen, setIsCameraModalOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  uiBlockedRef.current = isSettingsOpen || isHowToPlayOpen || isCameraModalOpen;
+  const handleCloseSettings = useCallback(() => setIsSettingsOpen(false), []);
+  const handleOpenSettings = useCallback(() => {
+    engineRef.current.pause();
+    setIsSettingsOpen(true);
+  }, []);
 
   const [isMuted, setIsMuted] = useState<boolean>(() => {
     try {
@@ -433,6 +508,8 @@ function App() {
 
   const handleResetCalibration = useCallback(() => {
     pipelineRef.current.resetCalibration();
+    singleHandRef.current.resetCalibration();
+    liveHandReadyRef.current = false;
     const resetState: TiltDebugState = {
       ...lastDebugStateRef.current,
       isCalibrating: true,
@@ -453,6 +530,19 @@ function App() {
     setDebugState(resetState);
   }, []);
 
+  useEffect(() => {
+    if (!isMobile || controlMode !== 'HAND_CAM') return;
+    const onRotate = () => {
+      handleResetCalibration();
+      if (engineRef.current.state === 'PLAYING') {
+        setTrackingLostPause(true);
+        engineRef.current.pause();
+      }
+    };
+    window.addEventListener('orientationchange', onRotate);
+    return () => window.removeEventListener('orientationchange', onRotate);
+  }, [isMobile, controlMode, handleResetCalibration]);
+
   const handleSkipCalibration = useCallback(() => {
     pipelineRef.current.skipCalibration();
     soundEffects.playHandLock();
@@ -470,6 +560,7 @@ function App() {
   }, []);
 
   const handleStartGame = useCallback((skipCountdown: boolean = false) => {
+    setTrackingLostPause(false);
     backgroundMusic.start();
     if (!lastDebugStateRef.current.isCalibrated) {
       pipelineRef.current.resetCalibration();
@@ -505,18 +596,26 @@ function App() {
   const handleContinueKeyboard = useCallback(() => {
     backgroundMusic.start();
     setIsCameraModalOpen(false);
-    setControlMode('KEYBOARD');
+    setControlMode(isMobileRef.current ? 'TOUCH' : 'KEYBOARD');
   }, []);
 
   const handleRestart = useCallback(() => {
     backgroundMusic.start();
     pipelineRef.current.skipCalibration();
     pipelineRef.current.lockoutPauseGesture(130);
-    engineRef.current.startGame(true);
+    if (controlModeRef.current === 'HAND_CAM') {
+      engineRef.current.changeState('READY');
+    } else {
+      engineRef.current.startGame(true);
+    }
   }, []);
 
   const handleTogglePause = useCallback(() => {
     if (engineRef.current.state === 'PAUSED') {
+      if (isMobileRef.current && controlModeRef.current === 'HAND_CAM' &&
+          (!lastDebugStateRef.current.isHandTrackingActive || !lastDebugStateRef.current.isCalibrated ||
+            singleHandRef.current.trackingAge(performance.now()) > 300)) return;
+      setTrackingLostPause(false);
       pipelineRef.current.lockoutPauseGesture(80); // Lockout when resuming
       soundEffects.playResume();
       engineRef.current.resume();
@@ -527,11 +626,27 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const tick = () => {
+      const ready = controlMode === 'HAND_CAM' && cameraActive && liveHandReadyRef.current &&
+        performance.now() - lastHandFrameRef.current < 400;
+      const blocked = isSettingsOpen || isHowToPlayOpen || isCameraModalOpen || document.visibilityState !== 'visible' || !document.hasFocus();
+      if (autoStartRef.current.update(engineRef.current, ready, blocked) === 'started') {
+        setTrackingLostPause(false);
+        pipelineRef.current.lockoutPauseGesture(130);
+        backgroundMusic.start();
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 100);
+    return () => window.clearInterval(id);
+  }, [controlMode, cameraActive, isSettingsOpen, isHowToPlayOpen, isCameraModalOpen]);
+
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen?.().catch(() => {});
     } else {
-      document.exitFullscreen().catch(() => {});
+      document.exitFullscreen?.().catch(() => {});
     }
   }, []);
 
@@ -541,7 +656,7 @@ function App() {
       ? (touchDirection === -1 ? -0.28 : 0.28)
       : keyboardAngleRad !== null && keyboardAngleRad !== 0
       ? keyboardAngleRad
-      : cameraActive && debugState.isHandTrackingActive && controlMode === 'HAND_CAM'
+      : cameraActive && (debugState.isHandTrackingActive || (isMobile && debugState.isCalibrated)) && controlMode === 'HAND_CAM'
       ? debugState.finalAngleRad
       : controlMode === 'GYRO' && gyro.isSupported && gyro.isPermissionGranted && gyro.hasReceivedReading
       ? gyro.tiltAngleRad
@@ -576,7 +691,7 @@ function App() {
           {!isMobile && <div className="cabinet-status"><span />{engineState === 'PLAYING' ? '1P PLAYING' : engineState === 'PAUSED' ? 'PAUSED' : engineState === 'GAME_OVER' ? 'GAME OVER' : engineState === 'COUNTDOWN' ? 'GET READY' : '1P READY'}</div>}
           <nav className="header-actions" aria-label="Game tools">
             <button className="header-btn utility-btn" onClick={handleOpenHowToPlay}>How to Play</button>
-            <button className="header-btn utility-btn" onClick={() => setIsSettingsOpen(true)} aria-expanded={isSettingsOpen}>Settings</button>
+            <button className="header-btn utility-btn" onClick={handleOpenSettings} aria-expanded={isSettingsOpen}>Settings</button>
             {!isMobile && <button className="header-btn utility-btn" onClick={toggleFullscreen}>Fullscreen</button>}
           </nav>
         </header>
@@ -602,6 +717,12 @@ function App() {
             gyroAvailable={gyro.isSupported}
             gyroPermissionRequired={gyro.isPermissionRequired && !gyro.isPermissionGranted}
             onRequestGyroPermission={gyro.requestPermission}
+            handTrackingReady={isCameraReady}
+            cameraVideoRef={bindVideo}
+            trackingLostPause={trackingLostPause}
+            handCalibrationProgress={debugState.calibrationProgress}
+            onResetHandCalibration={handleResetCalibration}
+            onPrepareGyro={gyro.prepareForPlay}
             cameraActive={cameraActive}
             cameraError={cameraError}
             onStartCamera={startCamera}
@@ -630,47 +751,14 @@ function App() {
               onRequestGyroPermission={gyro.requestPermission}
               onCalibrateGyro={gyro.calibrateNeutral}
             />
-          ) : (
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              autoPlay
-              style={
-                controlMode === 'HAND_CAM' && cameraActive
-                  ? {
-                      position: 'fixed',
-                      bottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-                      right: '12px',
-                      width: '84px',
-                      height: '52px',
-                      objectFit: 'cover',
-                      transform: 'scaleX(-1)',
-                      borderRadius: '8px',
-                      border: '2px solid #39ff14',
-                      boxShadow: '0 0 12px rgba(57, 255, 20, 0.5)',
-                      zIndex: 40,
-                      pointerEvents: 'none',
-                    }
-                  : {
-                      position: 'fixed',
-                      width: '1px',
-                      height: '1px',
-                      opacity: 0,
-                      pointerEvents: 'none',
-                      bottom: 0,
-                      right: 0,
-                    }
-              }
-            />
-          )}
+          ) : null}
         </main>
       </div>
 
       {/* Settings Bottom Sheet (Opened by Header Gear Button) */}
       <SettingsSheet
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={handleCloseSettings}
         isMusicMuted={isMusicMuted}
         onToggleMusic={handleToggleMusic}
         isMuted={isMuted}
@@ -692,11 +780,13 @@ function App() {
         onOpenHowToPlay={handleOpenHowToPlay}
         gyroAvailable={gyro.isSupported}
         isMobile={isMobile}
+        onPrepareGyro={gyro.prepareForPlay}
       />
 
       {/* Retro Arcade Camera Permission Alert Modal */}
       <CameraPermissionModal
         isOpen={isCameraModalOpen}
+        isMobile={isMobile}
         isReady={isCameraReady}
         cameraActive={cameraActive}
         cameraError={cameraError}
@@ -708,6 +798,7 @@ function App() {
       {/* Retro Arcade Intro & How-To-Play Modal */}
       <HowToPlayModal
         isOpen={isHowToPlayOpen && !isCameraModalOpen}
+        isMobile={isMobile}
         onClose={handleCloseHowToPlay}
         onStartGame={handleStartGame}
         onQuickPlay={handleSkipCalibrationAndStart}

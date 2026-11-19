@@ -19,6 +19,7 @@ function loadTypeScript(path, replacements = {}) {
   return exports;
 }
 const orientation = loadTypeScript('../src/input/orientation.ts');
+const motionReadiness = loadTypeScript('../src/input/motionReadiness.ts');
 
 // Exercise the actual sensor hook with deterministic React lifecycle and browser events.
 function mountOrientation({ angle = 270, permission } = {}) {
@@ -56,7 +57,7 @@ function mountOrientation({ angle = 270, permission } = {}) {
     },
   };
   const { useDeviceOrientation } = loadTypeScript('../src/hooks/useDeviceOrientation.ts', {
-    react, window, '../input/orientation': orientation,
+    react, window, '../input/orientation': orientation, '../input/motionReadiness': motionReadiness,
   });
   const render = () => {
     cursor = 0;
@@ -115,4 +116,42 @@ test('permission granted before first reading calibrates on that first reading',
   sensor.render();
   sensor.reading(42);
   assert.equal(sensor.render().tiltAngleRad, 0);
+});
+
+test('motion reading must include a finite value on the active screen axis', () => {
+  assert.equal(motionReadiness.hasMotionReading({ beta: null, gamma: 10 }, true), false);
+  assert.equal(motionReadiness.hasMotionReading({ beta: 10, gamma: null }, false), false);
+  assert.equal(motionReadiness.hasMotionReading({ beta: NaN, gamma: 10 }, true), false);
+  assert.equal(motionReadiness.hasMotionReading({ beta: 10, gamma: 0 }, true), true);
+});
+
+function fakeMotionTarget() {
+  let onReading;
+  let expire;
+  const target = {
+    innerWidth: 390, innerHeight: 844,
+    setTimeout(callback) { expire = callback; return 1; },
+    clearTimeout() { expire = null; },
+    addEventListener(name, callback) { onReading = callback; },
+    removeEventListener() { onReading = null; },
+  };
+  return { target, read: (event) => onReading?.(event), timeout: () => expire?.(), listening: () => !!onReading };
+}
+
+test('sensor timeout returns false and removes its listener', async () => {
+  const sensor = fakeMotionTarget();
+  const ready = motionReadiness.waitForMotionReading(sensor.target);
+  sensor.timeout();
+  assert.equal(await ready, false);
+  assert.equal(sensor.listening(), false);
+});
+
+test('null readings do not pass sensor readiness; real readings clean up the listener', async () => {
+  const sensor = fakeMotionTarget();
+  const ready = motionReadiness.waitForMotionReading(sensor.target);
+  sensor.read({ beta: null, gamma: null });
+  assert.equal(sensor.listening(), true);
+  sensor.read({ beta: 0, gamma: 0 });
+  assert.equal(await ready, true);
+  assert.equal(sensor.listening(), false);
 });

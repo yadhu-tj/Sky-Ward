@@ -16,9 +16,10 @@ interface WebcamProps {
   compact?: boolean;
 }
 
-export const Webcam = React.memo(function Webcam({ state, videoRef, cameraActive = false, cameraError, onStartCamera, compact = false }: WebcamProps) {
+export const Webcam = React.memo(function Webcam({ state, videoRef, cameraActive = false, cameraError, isReady = true, onStartCamera, compact = false }: WebcamProps) {
   const status = cameraError ? 'Camera unavailable'
     : !cameraActive ? 'Camera off'
+    : !isReady ? 'Loading hand tracking…'
     : !state.isHandTrackingActive ? 'Camera on · Waiting for hands'
     : !state.isCalibrated ? 'Hands detected · Hold level'
     : 'Hands detected · Calibrated';

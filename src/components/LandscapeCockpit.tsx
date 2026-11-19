@@ -88,7 +88,7 @@ export const LandscapeCockpit = React.memo(function LandscapeCockpit({
           <progress aria-label="Stage progress" value={stats.sectorProgress} max={1} />
           <dl className="score-grid">
             <div><dt>Score</dt><dd>{String(score).padStart(6, '0')}</dd></div>
-            <div><dt>HI-SCORE</dt><dd>{String(Math.max(score, stats.bestAltitudeMeters * 10)).padStart(6, '0')}</dd></div>
+            <div><dt>HI-SCORE</dt><dd>{String(Math.max(score, stats.bestScore)).padStart(6, '0')}</dd></div>
             <div><dt>Warps</dt><dd>{stats.portalsUsed}</dd></div>
           </dl>
           {canPause && <button className="secondary-action" onClick={onTogglePause}>{gameState === 'PAUSED' ? 'Resume game' : 'Pause game'}<kbd>Space</kbd></button>}

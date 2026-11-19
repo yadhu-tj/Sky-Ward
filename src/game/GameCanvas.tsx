@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { GameEngine } from './GameEngine';
 import type { GameState } from './GameEngine';
 import { soundEffects } from './soundEffects';
+import { mobileViewport, barScreenY } from './viewport';
+import { TouchSteering } from '../input/touchSteering';
 
 interface GameCanvasProps {
   engine: GameEngine;
@@ -22,6 +24,12 @@ interface GameCanvasProps {
   gyroAvailable?: boolean;
   gyroPermissionRequired?: boolean;
   onRequestGyroPermission?: () => Promise<boolean>;
+  onPrepareGyro?: () => Promise<boolean>;
+  handTrackingReady?: boolean;
+  cameraVideoRef?: React.Ref<HTMLVideoElement>;
+  trackingLostPause?: boolean;
+  handCalibrationProgress?: number;
+  onResetHandCalibration?: () => void;
   cameraActive?: boolean;
   cameraError?: string | null;
   onStartCamera?: () => Promise<boolean>;
@@ -66,12 +74,53 @@ export const GameCanvas = React.memo<GameCanvasProps>(
     gyroAvailable = true,
     gyroPermissionRequired = false,
     onRequestGyroPermission,
+    onPrepareGyro,
+    handTrackingReady = true,
+    cameraVideoRef,
+    trackingLostPause = false,
+    handCalibrationProgress = 0,
+    onResetHandCalibration,
     cameraActive = false,
     cameraError = null,
     onStartCamera,
     onOpenCamModal,
   }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const viewportRef = useRef<HTMLDivElement>(null);
+    const mobileRef = useRef(isMobile);
+    mobileRef.current = isMobile;
+    const [isPreparingGyro, setIsPreparingGyro] = useState(false);
+    const [inputNotice, setInputNotice] = useState('');
+    const touchRef = useRef(new TouchSteering());
+    const modeRef = useRef(controlMode);
+    modeRef.current = controlMode;
+
+    useEffect(() => {
+      const resetTouch = () => { touchRef.current.clear(); onTouchTilt?.(0); };
+      window.addEventListener('blur', resetTouch);
+      return () => { window.removeEventListener('blur', resetTouch); resetTouch(); };
+    }, [controlMode, isMobile, onTouchTilt]);
+
+    useEffect(() => {
+      if (!isMobile) {
+        if (canvasRef.current) { canvasRef.current.width = 920; canvasRef.current.height = 660; }
+        return;
+      }
+      const viewport = viewportRef.current;
+      const canvas = canvasRef.current;
+      if (!viewport || !canvas) return;
+      const resize = () => {
+        const rect = viewport.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const size = mobileViewport(rect.width, rect.height);
+        if (canvas.width !== size.width) canvas.width = size.width;
+        if (canvas.height !== size.height) canvas.height = size.height;
+      };
+      const observer = new ResizeObserver(resize);
+      observer.observe(viewport);
+      resize();
+      return () => observer.disconnect();
+    }, [isMobile]);
     const [gameState, setGameState] = useState<GameState>(engine.state);
     const [stats, setStats] = useState(engine.stats);
     const [floorGapMeters, setFloorGapMeters] = useState(Math.floor(engine.floorGap / 50));
@@ -132,7 +181,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
         const width = canvas.width;
         const height = canvas.height;
         const barCenterX = width / 2;
-        const barCenterY = height * 0.65;
+        const barCenterY = barScreenY(height, mobileRef.current);
         const barWidth = engine.bar.width;
         const barHalfWidth = barWidth / 2;
         const barHeight = engine.bar.height;
@@ -260,7 +309,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
         ctx.lineWidth = 1;
 
         for (let y = scrollOffset; y < height; y += 40) {
-          const worldY = engine.altitudePx + (height * 0.65 - y);
+          const worldY = engine.altitudePx + (barCenterY - y);
           const meterMark = Math.round(worldY / 50);
 
           if (meterMark % 5 === 0 && meterMark > 0) {
@@ -1124,24 +1173,9 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           ctx.font = "600 11px 'Press Start 2P', monospace";
           ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
-          const guidance =
-            controlMode === 'HAND_CAM' && cameraActive
-              ? count === 3
-                ? 'HOLD HANDS LEVEL!'
-                : count === 2
-                ? 'CENTERING STANCE...'
-                : 'GET READY TO CLIMB!'
-              : controlMode === 'GYRO'
-              ? count === 3
-                ? 'HOLD PHONE LEVEL!'
-                : count === 2
-                ? 'READY TO TILT...'
-                : 'ROLL!'
-              : count === 3
-              ? 'STEER WITH ARROW KEYS!'
-              : count === 2
-              ? 'BALANCE THE BALL...'
-              : 'ROLL!';
+          const guidance = modeRef.current === 'HAND_CAM'
+            ? mobileRef.current ? 'HOLD YOUR HAND STEADY!' : 'HOLD BOTH HANDS LEVEL!'
+            : modeRef.current === 'GYRO' ? 'HOLD PHONE LEVEL!' : 'GET READY TO ROLL!';
           ctx.fillText(guidance, width / 2, height / 2 + 50);
         }
 
@@ -1232,6 +1266,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           flexShrink: 0,
         }}
       >
+        <div className="game-viewport" ref={viewportRef}>
         <canvas
           ref={canvasRef}
           width={isMobile ? 780 : 920}
@@ -1242,19 +1277,15 @@ export const GameCanvas = React.memo<GameCanvasProps>(
               const rect = e.currentTarget.getBoundingClientRect();
               const relX = e.clientX - rect.left;
               e.currentTarget.setPointerCapture(e.pointerId);
-              onTouchTilt(relX < rect.width / 2 ? -1 : 1);
+              onTouchTilt(touchRef.current.press(e.pointerId, relX < rect.width / 2 ? -1 : 1));
             }
           }}
-          onPointerUp={() => {
-            if (isMobile && onTouchTilt) onTouchTilt(0);
-          }}
-          onPointerCancel={() => {
-            if (isMobile && onTouchTilt) onTouchTilt(0);
-          }}
-          onPointerLeave={() => {
-            if (isMobile && onTouchTilt) onTouchTilt(0);
-          }}
+          onPointerUp={(event) => onTouchTilt?.(touchRef.current.release(event.pointerId))}
+          onPointerCancel={(event) => onTouchTilt?.(touchRef.current.release(event.pointerId))}
+          onLostPointerCapture={(event) => onTouchTilt?.(touchRef.current.release(event.pointerId))}
         />
+
+        </div>
 
         {/* Desktop Retro Arcade Playfield HUD */}
         {!isMobile && (gameState === 'PLAYING' || gameState === 'COUNTDOWN' || gameState === 'PAUSED') && (
@@ -1384,128 +1415,15 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           </div>
         )}
 
-        {/* Section 8: Mobile Slim In-Game HUD (During Play) */}
+        {/* Mobile telemetry has its own row, outside the playable area. */}
         {isMobile && (gameState === 'PLAYING' || gameState === 'COUNTDOWN') && (
-          <div
-            className="mobile-play-hud"
-            style={{
-              position: 'absolute',
-              top: 'calc(8px + env(safe-area-inset-top, 0px))',
-              left: '10px',
-              right: '10px',
-              background: 'rgba(10, 5, 25, 0.78)',
-              backdropFilter: 'blur(6px)',
-              WebkitBackdropFilter: 'blur(6px)',
-              border: '1px solid #3b176d',
-              borderRadius: '10px',
-              padding: '8px 12px',
-              zIndex: 25,
-              pointerEvents: 'none',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.6)',
-            }}
-          >
-            {/* Row 1: Stage name, progress bar, 44x44 Pause icon button */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
-                  <span
-                    style={{
-                      fontFamily: "'Press Start 2P', monospace",
-                      fontSize: '0.58rem',
-                      color: '#ffe600',
-                      letterSpacing: '0.5px',
-                    }}
-                  >
-                    STAGE 0{stats.sectorLevel}: {stats.sectorName}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: "'Press Start 2P', monospace",
-                      fontSize: '0.52rem',
-                      color: '#00f3ff',
-                    }}
-                  >
-                    {stats.altitudeMeters}m
-                  </span>
-                </div>
-                {/* Progress bar */}
-                <div
-                  style={{
-                    width: '100%',
-                    height: '4px',
-                    background: '#1a0d33',
-                    borderRadius: '2px',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${Math.round(stats.sectorProgress * 100)}%`,
-                      height: '100%',
-                      background: 'linear-gradient(90deg, #ffe600, #ff007f)',
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* 44x44px Pause button */}
-              <button
-                onClick={onTogglePause}
-                aria-label="Pause Game"
-                title="Pause Game"
-                style={{
-                  pointerEvents: 'auto',
-                  width: '44px',
-                  height: '44px',
-                  minWidth: '44px',
-                  minHeight: '44px',
-                  borderRadius: '8px',
-                  background: 'linear-gradient(180deg, #ec4899 0%, #be185d 100%)',
-                  border: '1px solid #f472b6',
-                  color: '#ffffff',
-                  fontFamily: "'Press Start 2P', monospace",
-                  fontSize: '0.85rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 0 #9d174d',
-                }}
-              >
-                ⏸
-              </button>
-            </div>
-
-            {/* Row 2: Score, Hi-Score, Warps */}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginTop: '6px',
-                paddingTop: '6px',
-                borderTop: '1px solid rgba(59, 23, 109, 0.6)',
-                fontFamily: "'Press Start 2P', monospace",
-                fontSize: '0.55rem',
-              }}
-            >
-              <div>
-                <span style={{ color: '#00f3ff', marginRight: '4px' }}>SCORE</span>
-                <span style={{ color: '#ffffff', fontVariantNumeric: 'tabular-nums' }}>
-                  {(stats.altitudeMeters * 10 + stats.portalsUsed * 50).toString().padStart(6, '0')}
-                </span>
-              </div>
-              <div>
-                <span style={{ color: '#ffe600', marginRight: '4px' }}>HI</span>
-                <span style={{ color: '#ffe600', fontVariantNumeric: 'tabular-nums' }}>
-                  {Math.max(stats.altitudeMeters * 10 + stats.portalsUsed * 50, stats.bestAltitudeMeters * 10).toString().padStart(6, '0')}
-                </span>
-              </div>
-              <div>
-                <span style={{ color: '#ff007f' }}>★ {stats.portalsUsed}</span>
-              </div>
-            </div>
-          </div>
+          <section className="mobile-play-hud" aria-label="Flight status">
+            <div className="mobile-stage"><span>STAGE {String(stats.sectorLevel).padStart(2, '0')}</span><strong>{stats.altitudeMeters}m</strong>
+              <progress aria-label="Stage progress" value={stats.sectorProgress} max={1} /></div>
+            <div className="mobile-score"><span>SCORE</span><strong>{String(stats.altitudeMeters * 10 + stats.portalsUsed * 50).padStart(6, '0')}</strong></div>
+            <div className="mobile-warps"><span>WARPS</span><strong>★ {stats.portalsUsed}</strong></div>
+            <button className="mobile-pause" onClick={onTogglePause} aria-label="Pause game">Ⅱ</button>
+          </section>
         )}
 
         {/* Floating Toast Notification for Stage Promotion (Never pushes canvas layout) */}
@@ -1535,58 +1453,15 @@ export const GameCanvas = React.memo<GameCanvasProps>(
           </div>
         )}
 
-        {/* On-Screen Touch Steer Pads (When in Touch Mode on Mobile during Play) */}
         {isMobile && controlMode === 'TOUCH' && (gameState === 'PLAYING' || gameState === 'COUNTDOWN') && onTouchTilt && (
-          <div
-            style={{
-              position: 'absolute',
-              bottom: 'calc(48px + env(safe-area-inset-bottom, 0px))',
-              left: '12px',
-              right: '12px',
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '12px',
-              zIndex: 26,
-            }}
-          >
-            <button
-              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); onTouchTilt(-1); }}
-              onPointerUp={() => onTouchTilt(0)}
-              onPointerCancel={() => onTouchTilt(0)}
-              style={{
-                height: '48px',
-                borderRadius: '12px',
-                background: 'rgba(2, 132, 199, 0.85)',
-                border: '2px solid #38bdf8',
-                color: '#ffffff',
-                fontFamily: "'Press Start 2P', monospace",
-                fontSize: '0.62rem',
-                cursor: 'pointer',
-                touchAction: 'manipulation',
-                boxShadow: '0 3px 0 #075985',
-              }}
-            >
-              ◀ TILT LEFT
-            </button>
-            <button
-              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); onTouchTilt(1); }}
-              onPointerUp={() => onTouchTilt(0)}
-              onPointerCancel={() => onTouchTilt(0)}
-              style={{
-                height: '48px',
-                borderRadius: '12px',
-                background: 'rgba(236, 72, 153, 0.85)',
-                border: '2px solid #f472b6',
-                color: '#ffffff',
-                fontFamily: "'Press Start 2P', monospace",
-                fontSize: '0.62rem',
-                cursor: 'pointer',
-                touchAction: 'manipulation',
-                boxShadow: '0 3px 0 #9d174d',
-              }}
-            >
-              TILT RIGHT ▶
-            </button>
+          <div className="mobile-touch-controls" aria-label="Touch steering">
+            {([-1, 1] as const).map((direction) => (
+              <button key={direction} aria-label={direction === -1 ? 'Tilt left' : 'Tilt right'}
+                onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); onTouchTilt(touchRef.current.press(event.pointerId, direction)); }}
+                onPointerUp={(event) => onTouchTilt(touchRef.current.release(event.pointerId))} onPointerCancel={(event) => onTouchTilt(touchRef.current.release(event.pointerId))} onLostPointerCapture={(event) => onTouchTilt(touchRef.current.release(event.pointerId))}>
+                {direction === -1 ? '◀ TILT LEFT' : 'TILT RIGHT ▶'}
+              </button>
+            ))}
           </div>
         )}
 
@@ -1594,14 +1469,14 @@ export const GameCanvas = React.memo<GameCanvasProps>(
         {['CALIBRATING', 'READY'].includes(gameState) && (
           <div className="start-overlay">
             <div className="start-inner">
-              <span className="start-eyebrow">★ ENDLESS ARCADE SURVIVAL ★</span>
+              <span className="start-eyebrow">{isMobile ? '★ MOTION ARCADE ★' : '★ ENDLESS ARCADE SURVIVAL ★'}</span>
               <h1 className="start-title">SKYWARD ROLL</h1>
-              <p className="start-objective">Balance the ball. Beat the rising lava.</p>
-              <div className="how-cards">
+              <p className="start-objective">{isMobile && controlMode === 'HAND_CAM' ? 'One hand. Keep it rolling.' : 'Balance the ball. Beat the rising lava.'}</p>
+              {!isMobile && <div className="how-cards">
                 <div className="how-card"><span className="how-card-icon">{controlMode === 'KEYBOARD' ? '⌨️' : controlMode === 'TOUCH' ? '👆' : controlMode === 'GYRO' ? '📱' : '👐'}</span><h2 className="how-card-title">1. TAKE CONTROL</h2><p className="how-card-desc">{controlMode === 'KEYBOARD' ? 'Arrow keys or A / D to steer' : controlMode === 'TOUCH' ? 'Hold either side to steer' : controlMode === 'GYRO' ? 'Tilt your phone to steer' : 'Raise your hands to steer'}</p></div>
                 <div className="how-card"><span className="how-card-icon">⚖️</span><h2 className="how-card-title">2. STAY BALANCED</h2><p className="how-card-desc">Keep rolling and dodge the red holes</p></div>
                 <div className="how-card"><span className="how-card-icon">⭐</span><h2 className="how-card-title">3. CATCH WARPS</h2><p className="how-card-desc">Jump +7m and escape the lava</p></div>
-              </div>
+              </div>}
               <fieldset className="control-picker">
                 <legend>Choose your controls</legend>
                 <div className="start-mode-tabs">
@@ -1614,22 +1489,39 @@ export const GameCanvas = React.memo<GameCanvasProps>(
                     { mode: 'HAND_CAM' as const, label: 'Camera', icon: '◎' },
                   ]).map(({ mode, label, icon }) => (
                     <button key={mode} type="button" className={`start-mode-tab ${controlMode === mode ? 'active' : ''}`}
-                      aria-pressed={controlMode === mode} disabled={mode === 'GYRO' && !gyroAvailable}
-                      onClick={() => onSelectControlMode?.(mode)}>
+                      aria-pressed={controlMode === mode} disabled={isPreparingGyro || (mode === 'GYRO' && !gyroAvailable)}
+                      onClick={() => { setInputNotice(''); onSelectControlMode?.(mode); }}>
                       <span aria-hidden="true">{icon}</span>{label}
                     </button>
                   ))}
                 </div>
               </fieldset>
+              {isMobile && <section className="mobile-control-guide" aria-label="Control setup">
+                <div className="mobile-guide-heading"><span aria-hidden="true">{controlMode === 'HAND_CAM' ? '🖐️' : controlMode === 'TOUCH' ? '👆' : '📱'}</span><div>
+                  <h2>{controlMode === 'HAND_CAM' ? 'TILT ONE HAND' : controlMode === 'TOUCH' ? 'HOLD TO STEER' : 'TILT YOUR PHONE'}</h2>
+                  <p>{controlMode === 'HAND_CAM' ? 'Hold your phone or prop it up. Show your other palm and lean it left or right.' : controlMode === 'TOUCH' ? 'Hold either screen side or use the thumb buttons. Release to level the bar.' : 'Hold your phone comfortably, then tilt left or right. We’ll check your sensors when you start.'}</p>
+                </div></div>
+                {controlMode === 'HAND_CAM' && <>
+                  <div className="mobile-setup-preview">
+                    <video ref={cameraVideoRef} autoPlay playsInline muted />
+                    {!cameraActive && <div className="mobile-preview-placeholder"><span aria-hidden="true">🖐️</span><p>Your hand goes here</p></div>}
+                    {cameraActive && <><div className="mobile-palm-frame" aria-hidden="true" /><span className="mobile-preview-label">{!handTrackingReady ? 'LOADING TRACKING…' : !isHandTrackingActive ? 'FIND YOUR HAND' : isCalibrated ? 'HAND LOCKED' : 'HOLD STEADY'}</span></>}
+                  </div>
+                  <div className="mobile-hand-readiness">
+                    <p role="status">{cameraError ? cameraError : !cameraActive ? 'Enable the camera to begin.' : !handTrackingReady ? 'Loading hand tracking. First startup can take a moment…' : !isHandTrackingActive ? 'Show one upright palm to the camera.' : !isCalibrated ? 'Hold still for a moment to set your neutral.' : 'Hand locked. Starting your countdown…'}</p>
+                    {cameraActive && isCalibrated && <button className="text-action" onClick={onResetHandCalibration}>Recenter</button>}
+                  </div>
+                  {cameraActive && !isCalibrated && isHandTrackingActive && <progress aria-label="Hand calibration" value={handCalibrationProgress} max={1} />}
+                </>}
+              </section>}
+              {isMobile && <p className="mobile-mission-strip"><span>⚖ Balance</span><span>◉ Dodge holes</span><span>⭐ Warp +7m</span></p>}
+
               <div className="control-instruction visually-hidden">
                 {controlMode === 'KEYBOARD' ? <><kbd>←</kbd><kbd>→</kbd><span>or A / D to tilt the bar.</span></>
                   : controlMode === 'TOUCH' ? <p>Hold the left or right side of the screen to steer.</p>
                   : controlMode === 'GYRO' ? <p>Hold your phone comfortably. Tilt left or right to steer.</p>
                   : <p>Hold both hands in view. Raise one hand to tilt the bar.</p>}
               </div>
-              {isMobile && controlMode === 'HAND_CAM' && (
-                <p className="setup-status" role="status">{cameraError ? cameraError : !cameraActive ? 'Enable your camera to use hand controls.' : !isHandTrackingActive ? 'Camera on · Waiting for hands' : isCalibrated ? 'Hands detected · Calibrated' : 'Hands detected · Hold level to calibrate'}</p>
-              )}
               <button className="btn-start" onClick={async () => {
                 if (controlMode === 'HAND_CAM' && !cameraActive) {
                   const active = await onStartCamera?.();
@@ -1637,23 +1529,41 @@ export const GameCanvas = React.memo<GameCanvasProps>(
                   return;
                 }
                 if (controlMode === 'GYRO') {
-                  if (!gyroAvailable) return;
-                  if (gyroPermissionRequired && !(await onRequestGyroPermission?.())) return;
+                  setIsPreparingGyro(true);
+                  let ready = false;
+                  try {
+                    ready = onPrepareGyro ? await onPrepareGyro() : gyroAvailable && (!gyroPermissionRequired || !!(await onRequestGyroPermission?.()));
+                  } catch {
+                    ready = false;
+                  } finally {
+                    setIsPreparingGyro(false);
+                  }
+                  if (modeRef.current !== 'GYRO') return;
+                  if (!ready) {
+                    onSelectControlMode?.('TOUCH');
+                    setInputNotice('Phone tilt unavailable. Touch controls selected — tap Start to play.');
+                    return;
+                  }
                   onCalibrateGyro?.();
                 }
                 if (controlMode === 'KEYBOARD' || controlMode === 'TOUCH') onSkipCalibrationAndStart();
                 else onStartGame();
-              }} disabled={controlMode === 'HAND_CAM' && cameraActive && (!isHandTrackingActive || !isCalibrated)}>
-                {controlMode === 'HAND_CAM' && !cameraActive ? 'Enable camera' : controlMode === 'HAND_CAM' && (!isHandTrackingActive || !isCalibrated) ? 'WAITING FOR HANDS' : '★ START GAME ★'}
+              }} disabled={isPreparingGyro || (controlMode === 'HAND_CAM' && cameraActive)}>
+                {isPreparingGyro ? 'CHECKING PHONE TILT…' : controlMode === 'HAND_CAM' && cameraActive && !handTrackingReady ? 'LOADING TRACKER…' : controlMode === 'HAND_CAM' && !cameraActive ? 'Enable camera' : controlMode === 'HAND_CAM' && (!isHandTrackingActive || !isCalibrated) ? (isHandTrackingActive ? 'CALIBRATING…' : 'SHOW YOUR HAND') : controlMode === 'HAND_CAM' ? 'STARTING COUNTDOWN…' : '★ START GAME ★'}
               </button>
-              <p className="start-tip">{controlMode === 'HAND_CAM' ? 'Show one open palm to pause. Space works too.' : isMobile ? 'Use the pause button whenever you need a break.' : 'Space to pause · R to restart'}</p>
+              {inputNotice && <p className="mobile-input-notice" role="status">{inputNotice}</p>}
+              <p className="start-tip">{controlMode === 'HAND_CAM' ? isMobile ? 'Use the Pause button during play. Your palm is the controller.' : 'Show one open palm to pause. Space works too.' : isMobile ? 'Use the pause button whenever you need a break.' : 'Space to pause · R to restart'}</p>
             </div>
           </div>
         )}
 
+        {isMobile && controlMode === 'HAND_CAM' && !['CALIBRATING', 'READY'].includes(gameState) && (
+          <div className="mobile-flight-preview"><video ref={cameraVideoRef} autoPlay playsInline muted /></div>
+        )}
+
         {/* Paused Overlay */}
         {gameState === 'PAUSED' && (
-          <div
+          <div className="game-state-overlay"
             style={{
               position: 'absolute',
               inset: 0,
@@ -1679,13 +1589,14 @@ export const GameCanvas = React.memo<GameCanvasProps>(
                 textShadow: '0 0 14px rgba(255, 230, 0, 0.6)',
               }}
             >
-              GAME PAUSED
+              {trackingLostPause ? 'HAND TRACKING LOST' : 'GAME PAUSED'}
             </h2>
             <p style={{ color: '#cbd5e1', margin: 0, fontSize: '0.85rem' }}>
-              Hold single palm ✋ to camera or press <kbd>Space</kbd> to resume
+              {isMobile ? controlMode === 'HAND_CAM' ? 'Show your hand, then tap Resume when ready.' : 'Tap Resume when you’re ready to roll.' : <>Hold single palm ✋ to camera or press <kbd>Space</kbd> to resume</>}
             </p>
             <button
               onClick={onTogglePause}
+              disabled={isMobile && controlMode === 'HAND_CAM' && (!isHandTrackingActive || !isCalibrated)}
               style={{
                 marginTop: '12px',
                 background: 'linear-gradient(180deg, #10b981 0%, #047857 100%)',
@@ -1707,7 +1618,7 @@ export const GameCanvas = React.memo<GameCanvasProps>(
 
         {/* Game Over Screen */}
         {gameState === 'GAME_OVER' && (
-          <div
+          <div className="game-state-overlay"
             style={{
               position: 'absolute',
               inset: 0,
@@ -1920,10 +1831,16 @@ export const GameCanvas = React.memo<GameCanvasProps>(
       prev.onCalibrateGyro === next.onCalibrateGyro &&
       prev.gyroAvailable === next.gyroAvailable &&
       prev.gyroPermissionRequired === next.gyroPermissionRequired &&
+      prev.handTrackingReady === next.handTrackingReady &&
+      prev.cameraVideoRef === next.cameraVideoRef &&
+      prev.trackingLostPause === next.trackingLostPause &&
+      prev.handCalibrationProgress === next.handCalibrationProgress &&
+      prev.onResetHandCalibration === next.onResetHandCalibration &&
       prev.cameraActive === next.cameraActive &&
       prev.cameraError === next.cameraError &&
       prev.onStartCamera === next.onStartCamera &&
       prev.onOpenCamModal === next.onOpenCamModal &&
+      prev.onPrepareGyro === next.onPrepareGyro &&
       prev.onRequestGyroPermission === next.onRequestGyroPermission
     );
   }

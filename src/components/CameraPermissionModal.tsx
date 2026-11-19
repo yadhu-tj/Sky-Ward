@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 interface CameraPermissionModalProps {
   isOpen: boolean;
+  isMobile?: boolean;
   isReady: boolean;
   cameraActive: boolean;
   cameraError: string | null;
@@ -13,6 +14,7 @@ interface CameraPermissionModalProps {
 export const CameraPermissionModal: React.FC<CameraPermissionModalProps> = React.memo(
   function CameraPermissionModal({
     isOpen,
+    isMobile = false,
     isReady,
     cameraActive,
     cameraError,
@@ -409,7 +411,7 @@ export const CameraPermissionModal: React.FC<CameraPermissionModalProps> = React
                   e.currentTarget.style.borderColor = '#4c1d95';
                 }}
               >
-                ⌨️ PLAY WITH ARROW KEYS INSTEAD
+                {isMobile ? '👆 USE TOUCH CONTROLS INSTEAD' : '⌨️ PLAY WITH ARROW KEYS INSTEAD'}
               </button>
             </div>
           </div>

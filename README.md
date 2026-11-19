@@ -16,7 +16,7 @@ In **Sky-Ward**, the player uses natural webcam hand gestures to balance and ste
 - **Computer Vision Gesture Steering**:
   - Real-time hand landmark tracking via **MediaPipe Hands**.
   - Differential vertical height tracking (\(Y_{\text{right}} - Y_{\text{left}}\)) providing precise, low-fatigue tilt control.
-  - Automatic neutral posture calibration with 3-second countdown lock.
+  - Automatic neutral posture calibration followed by a full 3–2–1 start countdown.
   - Single-hand open palm pause gesture recognition with grace lockout.
   - Anti-spike protection and angular slew-rate guards to prevent sudden bar snaps.
 - **Realistic Mechanical Rolling Physics**:
@@ -24,7 +24,7 @@ In **Sky-Ward**, the player uses natural webcam hand gestures to balance and ste
   - Edge interaction: gentle bumper bounce on shallow tilts, steep-tilt (>12°) edge slip and fall-off.
   - Sinking ball animations and molten lava splashes on hazard impact.
 - **Procedural Level Generation & Atmospheric Sectors**:
-  - Chunk-based obstacle spawning with guaranteed-path solvability.
+  - Chunk-based obstacle spawning with a minimum number of safe slots per row.
   - Progressive sector difficulty (Lower Silo, Intermediate Shaft, Upper Ascent, Stratospheric Gate).
   - Physical milestone gateway arches with safe breathing corridors between sectors.
   - Teleporting warp portals with visual burst animations and temporary invulnerability shield grace periods.
@@ -38,23 +38,24 @@ In **Sky-Ward**, the player uses natural webcam hand gestures to balance and ste
 
 ## 🕹️ Controls
 
-| Control | Motion Gesture | Keyboard Fallback |
+| Mode | Steering | Start / pause |
 |---|---|---|
-| **Steer Left** | Lower left hand / Raise right hand | `ArrowLeft` or `A` |
-| **Steer Right** | Lower right hand / Raise left hand | `ArrowRight` or `D` |
-| **Neutral / Level** | Hold hands level at chest height | Release keys |
-| **Pause / Resume** | Show single open palm to camera | `Space` |
-| **Recalibrate** | Click *Recalibrate* or hold level stance | `C` |
-| **Restart Game** | Click *Restart Flight* button | `R` |
+| Desktop camera | Raise/lower two hands to tilt the bar | Hold both hands level to calibrate; automatically counts 3–2–1. One open palm or Space pauses/resumes. |
+| Mobile camera | Show one upright palm and lean it left/right; hand height does not steer | Hold still to calibrate, then automatic 3–2–1. Use the on-screen Pause button. Prolonged tracking loss pauses the game. |
+| Phone tilt | Tilt the device left/right; Zero Level resets neutral | Choose Phone Tilt and tap Start. iOS requests motion permission. Missing readings switch the selection to Touch. |
+| Touch | Hold a screen side or the left/right thumb buttons | Tap Start; use on-screen Pause/Resume. |
+| Keyboard | Left/Right arrows or A/D | Space or P pauses/resumes; R restarts; C recalibrates camera controls. |
+
+If tracking is lost during an automatic countdown, the game waits and starts again from 3 after tracking returns. Open dialogs and background tabs block automatic starts. Help and Settings pause an active run.
 
 ---
 
 ## 🛠️ Tech Stack & Architecture
 
 - **Frontend Framework**: [React 18](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
-- **Bundler & Tooling**: [Vite 5](https://vitejs.dev/) + [Oxlint](https://oxc.rs/)
+- **Bundler & Tooling**: [Vite 7](https://vitejs.dev/) + [Oxlint](https://oxc.rs/)
 - **Computer Vision**: [@mediapipe/hands](https://developers.google.com/mediapipe/solutions/vision/hand_landmarker) + Camera Utils
-- **Graphics & Rendering**: High-performance HTML5 2D Canvas (60 FPS optimized, zero garbage allocation per frame)
+- **Graphics & Rendering**: HTML5 2D Canvas with animation-frame rendering and physics substeps for slow frames
 - **Styling**: Responsive modular CSS with aerospace avionics aesthetics
 
 ```
@@ -89,7 +90,7 @@ skyward-roll/
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (version 18+ recommended)
+- [Node.js](https://nodejs.org/) (20.19+ or 22.12+; Node 24 is also supported)
 - A working webcam for motion controls (or use keyboard fallback)
 
 ### Installation
@@ -102,7 +103,7 @@ skyward-roll/
 
 2. Install dependencies:
    ```bash
-   npm install
+   npm ci
    ```
 
 3. Launch development server:
@@ -119,6 +120,27 @@ skyward-roll/
    ```bash
    npm run lint
    ```
+
+---
+
+## Verification and sharing
+
+```bash
+npm test
+npm run lint
+npm run build
+npm audit
+```
+
+`npm run preview` serves the production build locally. Deploy the **entire `dist/` directory**, including its model and WebAssembly assets, to a static host with **HTTPS**. No API key or backend is required. Camera frames are processed locally in the browser; gameplay does not upload them.
+
+MediaPipe runtime files are bundled from the installed package rather than fetched from a third-party CDN. First startup still downloads and compiles the selected runtime/model; phones use the lighter model. The UI shows loading until tracking processes its first frame.
+
+Camera and motion APIs require a secure context on supported browsers. A plain HTTP LAN address is not equivalent to `localhost` for phone permissions. Configure the host to serve `.wasm` as `application/wasm`; serve `.tflite`, `.data`, and `.binarypb` as binary assets. Cache hashed assets, with gzip/Brotli compression where supported. Do not use the development server as public production hosting.
+
+High scores and best altitude currently last for the open game session. Audio preferences are saved in browser storage. The procedural generator guarantees safe slots per row; it does not prove a physically reachable path through every possible sequence.
+
+See [the final audit](docs/FINAL_AUDIT.md) for validation scope and remaining real-device checks.
 
 ---
 

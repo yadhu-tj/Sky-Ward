@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { screenTiltDegrees } from '../input/orientation';
+import { hasMotionReading, waitForMotionReading } from '../input/motionReadiness';
 
 export interface DeviceOrientationState {
   isSupported: boolean;
@@ -103,6 +104,22 @@ export function useDeviceOrientation() {
     }
   }, [calibrateNeutral]);
 
+  // Called from the Start button so iOS permission stays within a user gesture.
+  const prepareForPlay = useCallback(async (): Promise<boolean> => {
+    if (!isSupported) {
+      setError('Phone tilt is unavailable. Use touch controls.');
+      return false;
+    }
+    if (!(await requestPermission())) return false;
+    if (!(await waitForMotionReading(window))) {
+      setError('No motion readings received. Use touch controls.');
+      return false;
+    }
+    setError(null);
+    calibrateNeutral();
+    return true;
+  }, [isSupported, requestPermission, calibrateNeutral]);
+
   // Main motion sensor listener
   useEffect(() => {
     if (!isSupported || !isPermissionGranted) return;
@@ -114,7 +131,7 @@ export function useDeviceOrientation() {
       rawGammaRef.current = gamma;
       rawBetaRef.current = beta;
 
-      if (gamma === null && beta === null) return;
+      if (!hasMotionReading(e, window.innerWidth > window.innerHeight)) return;
 
       if (!hasReceivedReadingRef.current) {
         hasReceivedReadingRef.current = true;
@@ -175,6 +192,7 @@ export function useDeviceOrientation() {
     rawBeta: rawBetaRef.current,
     error,
     requestPermission,
+    prepareForPlay,
     calibrateNeutral,
   };
 }

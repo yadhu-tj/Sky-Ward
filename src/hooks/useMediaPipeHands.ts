@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Hands } from '@mediapipe/hands';
 import type { Results } from '@mediapipe/hands';
+import { handAssetUrl } from './handAssets';
 
 export interface Landmark {
   x: number;
@@ -131,7 +132,8 @@ export function getPalmCentroid(landmarks: Landmark[] | null): { x: number; y: n
 }
 
 export function useMediaPipeHands(
-  onFrame?: (landmarks: HandLandmarks, isOpenPalm: boolean) => void
+  onFrame?: (landmarks: HandLandmarks, isOpenPalm: boolean) => void,
+  lightweight = false,
 ) {
   const [landmarks, setLandmarks] = useState<HandLandmarks>({ left: null, right: null });
   const [isOpenPalm, setIsOpenPalm] = useState(false);
@@ -145,8 +147,14 @@ export function useMediaPipeHands(
   }, [onFrame]);
 
   const handsRef = useRef<Hands | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const canProcessRef = useRef(false);
+  const hasResultsRef = useRef(false);
+  const lightweightRef = useRef(lightweight);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const startPromiseRef = useRef<Promise<boolean> | null>(null);
+  const cameraGenerationRef = useRef(0);
+  const modelErrorRef = useRef<string | null>(null);
   const animFrameIdRef = useRef<number | null>(null);
   const isProcessingRef = useRef(false);
   const isMountedRef = useRef(true);
@@ -160,187 +168,213 @@ export function useMediaPipeHands(
   // Initialize MediaPipe Hands model once
   useEffect(() => {
     isMountedRef.current = true;
+    let cancelled = false;
+    let model: Hands | null = null;
+    canProcessRef.current = false;
+    hasResultsRef.current = false;
+    setIsReady(false);
 
-    try {
-      const hands = new Hands({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
-      });
+    // Defer construction so StrictMode's discarded effect never creates a WASM runtime.
+    const initialization = Promise.resolve().then(async () => {
+      if (cancelled) return;
+      try {
+        const hands = new Hands({
+          locateFile: handAssetUrl,
+        });
 
-      hands.setOptions({
-        maxNumHands: 2,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.55,
-        minTrackingConfidence: 0.50,
-      });
+        model = hands;
+        hands.setOptions({
+          maxNumHands: 2,
+          modelComplexity: lightweightRef.current ? 0 : 1,
+          minDetectionConfidence: 0.55,
+          minTrackingConfidence: 0.50,
+        });
 
-      hands.onResults((results: Results) => {
-        if (!isMountedRef.current) return;
+        hands.onResults((results: Results) => {
+          if (cancelled || !isMountedRef.current) return;
+          if (!hasResultsRef.current) {
+            hasResultsRef.current = true;
+            setIsReady(true);
+          }
 
-        const rawDetected = results.multiHandLandmarks ?? [];
-        const rawHandedness = results.multiHandedness ?? [];
+          const rawDetected = results.multiHandLandmarks ?? [];
+          const rawHandedness = results.multiHandedness ?? [];
 
-        interface HandCandidate {
-          landmarks: Landmark[]; // mirrored x: 1 - lm.x
-          centroid: { x: number; y: number };
-          label: 'Left' | 'Right' | null;
-          score: number;
-        }
+          interface HandCandidate {
+            landmarks: Landmark[]; // mirrored x: 1 - lm.x
+            centroid: { x: number; y: number };
+            label: 'Left' | 'Right' | null;
+            score: number;
+          }
 
-        const candidates: HandCandidate[] = [];
-        for (let i = 0; i < rawDetected.length; i++) {
-          const rawLms = rawDetected[i];
-          if (!isValidHandLandmarks(rawLms)) continue;
+          const candidates: HandCandidate[] = [];
+          for (let i = 0; i < rawDetected.length; i++) {
+            const rawLms = rawDetected[i];
+            if (!isValidHandLandmarks(rawLms)) continue;
 
-          // Mirror x for selfie camera perspective
-          const mapped: Landmark[] = rawLms.map((lm) => ({
-            x: 1 - lm.x,
-            y: lm.y,
-            z: lm.z,
-          }));
+            // Mirror x for selfie camera perspective
+            const mapped: Landmark[] = rawLms.map((lm) => ({
+              x: 1 - lm.x,
+              y: lm.y,
+              z: lm.z,
+            }));
 
-          const hd = rawHandedness[i];
-          // MediaPipe assumes selfie-mirrored input when classifying handedness;
-          // since our raw video element is un-mirrored, invert the label to match the user's physical hand.
-          const rawLabel = hd?.label;
-          const physicalLabel: 'Left' | 'Right' | null =
-            rawLabel === 'Left' ? 'Right' : rawLabel === 'Right' ? 'Left' : null;
+            const hd = rawHandedness[i];
+            // MediaPipe assumes selfie-mirrored input when classifying handedness;
+            // since our raw video element is un-mirrored, invert the label to match the user's physical hand.
+            const rawLabel = hd?.label;
+            const physicalLabel: 'Left' | 'Right' | null =
+              rawLabel === 'Left' ? 'Right' : rawLabel === 'Right' ? 'Left' : null;
 
-          const centroid = getPalmCentroid(mapped);
-          candidates.push({
-            landmarks: mapped,
-            centroid,
-            label: physicalLabel,
-            score: hd?.score ?? 0,
-          });
-        }
+            const centroid = getPalmCentroid(mapped);
+            candidates.push({
+              landmarks: mapped,
+              centroid,
+              label: physicalLabel,
+              score: hd?.score ?? 0,
+            });
+          }
 
-        let left: Landmark[] | null = null;
-        let right: Landmark[] | null = null;
+          let left: Landmark[] | null = null;
+          let right: Landmark[] | null = null;
 
-        const lastLeft = lastLeftCentroidRef.current;
-        const lastRight = lastRightCentroidRef.current;
-        const leftRecent = framesSinceLeftSeenRef.current < 25 && lastLeft !== null;
-        const rightRecent = framesSinceRightSeenRef.current < 25 && lastRight !== null;
+          const lastLeft = lastLeftCentroidRef.current;
+          const lastRight = lastRightCentroidRef.current;
+          const leftRecent = framesSinceLeftSeenRef.current < 25 && lastLeft !== null;
+          const rightRecent = framesSinceRightSeenRef.current < 25 && lastRight !== null;
 
-        if (candidates.length === 1) {
-          const cand = candidates[0];
+          if (candidates.length === 1) {
+            const cand = candidates[0];
 
-          // Priority 1: Check proximity to recently tracked left/right centroids
-          let isLeftCandidate = false;
-          if (leftRecent && rightRecent) {
-            const distLeft = Math.hypot(cand.centroid.x - lastLeft.x, cand.centroid.y - lastLeft.y);
-            const distRight = Math.hypot(cand.centroid.x - lastRight.x, cand.centroid.y - lastRight.y);
-            isLeftCandidate = distLeft < distRight;
-          } else if (leftRecent && !rightRecent) {
-            const distLeft = Math.hypot(cand.centroid.x - lastLeft.x, cand.centroid.y - lastLeft.y);
-            isLeftCandidate = distLeft < 0.28 || cand.centroid.x < 0.55;
-          } else if (rightRecent && !leftRecent) {
-            const distRight = Math.hypot(cand.centroid.x - lastRight.x, cand.centroid.y - lastRight.y);
-            isLeftCandidate = !(distRight < 0.28 || cand.centroid.x > 0.45);
-          } else {
-            // Priority 2: Use corrected anatomical handedness classifier (if confidence >= 0.70)
-            if (cand.label && cand.score >= 0.70) {
-              isLeftCandidate = cand.label === 'Left';
+            // Priority 1: Check proximity to recently tracked left/right centroids
+            let isLeftCandidate = false;
+            if (leftRecent && rightRecent) {
+              const distLeft = Math.hypot(cand.centroid.x - lastLeft.x, cand.centroid.y - lastLeft.y);
+              const distRight = Math.hypot(cand.centroid.x - lastRight.x, cand.centroid.y - lastRight.y);
+              isLeftCandidate = distLeft < distRight;
+            } else if (leftRecent && !rightRecent) {
+              const distLeft = Math.hypot(cand.centroid.x - lastLeft.x, cand.centroid.y - lastLeft.y);
+              isLeftCandidate = distLeft < 0.28 || cand.centroid.x < 0.55;
+            } else if (rightRecent && !leftRecent) {
+              const distRight = Math.hypot(cand.centroid.x - lastRight.x, cand.centroid.y - lastRight.y);
+              isLeftCandidate = !(distRight < 0.28 || cand.centroid.x > 0.45);
             } else {
-              // Priority 3: Geometric center line
-              isLeftCandidate = cand.centroid.x < 0.5;
+              // Priority 2: Use corrected anatomical handedness classifier (if confidence >= 0.70)
+              if (cand.label && cand.score >= 0.70) {
+                isLeftCandidate = cand.label === 'Left';
+              } else {
+                // Priority 3: Geometric center line
+                isLeftCandidate = cand.centroid.x < 0.5;
+              }
             }
-          }
 
-          if (isLeftCandidate) {
-            left = cand.landmarks;
-          } else {
-            right = cand.landmarks;
-          }
-        } else if (candidates.length >= 2) {
-          const c0 = candidates[0];
-          const c1 = candidates[1];
+            if (isLeftCandidate) {
+              left = cand.landmarks;
+            } else {
+              right = cand.landmarks;
+            }
+          } else if (candidates.length >= 2) {
+            const c0 = candidates[0];
+            const c1 = candidates[1];
 
-          // Determine optimal assignment to (left, right)
-          let assignC0ToLeft = true;
+            // Determine optimal assignment to (left, right)
+            let assignC0ToLeft = true;
 
-          if (leftRecent && rightRecent) {
-            // Match against continuous history to guarantee hands NEVER swap between frames
-            const costNormal =
-              Math.hypot(c0.centroid.x - lastLeft.x, c0.centroid.y - lastLeft.y) +
-              Math.hypot(c1.centroid.x - lastRight.x, c1.centroid.y - lastRight.y);
-            const costSwapped =
-              Math.hypot(c1.centroid.x - lastLeft.x, c1.centroid.y - lastLeft.y) +
-              Math.hypot(c0.centroid.x - lastRight.x, c0.centroid.y - lastRight.y);
+            if (leftRecent && rightRecent) {
+              // Match against continuous history to guarantee hands NEVER swap between frames
+              const costNormal =
+                Math.hypot(c0.centroid.x - lastLeft.x, c0.centroid.y - lastLeft.y) +
+                Math.hypot(c1.centroid.x - lastRight.x, c1.centroid.y - lastRight.y);
+              const costSwapped =
+                Math.hypot(c1.centroid.x - lastLeft.x, c1.centroid.y - lastLeft.y) +
+                Math.hypot(c0.centroid.x - lastRight.x, c0.centroid.y - lastRight.y);
 
-            assignC0ToLeft = costNormal <= costSwapped;
-          } else {
-            // If no previous history, sort horizontally by centroid X
-            assignC0ToLeft = c0.centroid.x < c1.centroid.x;
-          }
+              assignC0ToLeft = costNormal <= costSwapped;
+            } else {
+              // If no previous history, sort horizontally by centroid X
+              assignC0ToLeft = c0.centroid.x < c1.centroid.x;
+            }
 
-          const candLeft = assignC0ToLeft ? c0 : c1;
-          const candRight = assignC0ToLeft ? c1 : c0;
+            const candLeft = assignC0ToLeft ? c0 : c1;
+            const candRight = assignC0ToLeft ? c1 : c0;
 
-          // Enforce minimum horizontal separation between dual hands
-          const horizDist = candRight.centroid.x - candLeft.centroid.x;
-          if (horizDist >= 0.12) {
-            left = candLeft.landmarks;
-            right = candRight.landmarks;
-          } else {
-            // Cluster too tight horizontally to be separate steering hands
-            if (candLeft.centroid.x < 0.5) {
+            // Enforce minimum horizontal separation between dual hands
+            const horizDist = candRight.centroid.x - candLeft.centroid.x;
+            if (horizDist >= 0.12) {
               left = candLeft.landmarks;
-            } else {
               right = candRight.landmarks;
+            } else {
+              // Cluster too tight horizontally to be separate steering hands
+              if (candLeft.centroid.x < 0.5) {
+                left = candLeft.landmarks;
+              } else {
+                right = candRight.landmarks;
+              }
             }
           }
+
+          // Update temporal tracking memory with smoothing
+          if (left) {
+            const curC = getPalmCentroid(left);
+            lastLeftCentroidRef.current = lastLeft
+              ? { x: 0.75 * curC.x + 0.25 * lastLeft.x, y: 0.75 * curC.y + 0.25 * lastLeft.y }
+              : curC;
+            framesSinceLeftSeenRef.current = 0;
+          } else {
+            framesSinceLeftSeenRef.current++;
+          }
+
+          if (right) {
+            const curC = getPalmCentroid(right);
+            lastRightCentroidRef.current = lastRight
+              ? { x: 0.75 * curC.x + 0.25 * lastRight.x, y: 0.75 * curC.y + 0.25 * lastRight.y }
+              : curC;
+            framesSinceRightSeenRef.current = 0;
+          } else {
+            framesSinceRightSeenRef.current++;
+          }
+
+          // Strict Single-Hand Palm Pause Rule:
+          // Palm pause must ONLY work if a single hand is shown. If 2 hands are present, it must NOT work.
+          const isSingleHand = (left !== null && right === null) || (left === null && right !== null);
+          const palmDetected = isSingleHand && (isHandOpenPalm(left) || isHandOpenPalm(right));
+
+          const nextLandmarks: HandLandmarks = { left, right };
+          if (onFrameRef.current) {
+            // Zero-latency direct callback path (avoids 30fps React state + effect hop)
+            onFrameRef.current(nextLandmarks, palmDetected);
+          } else {
+            setLandmarks(nextLandmarks);
+            setIsOpenPalm(palmDetected);
+          }
+        });
+
+        handsRef.current = hands;
+        await hands.initialize();
+        if (!cancelled) canProcessRef.current = true;
+      } catch (err) {
+        console.error('Failed to initialize MediaPipe Hands:', err);
+        if (!cancelled) {
+          modelErrorRef.current = 'Hand tracking could not load. Refresh to retry, or use Touch controls.';
+          setCameraError(modelErrorRef.current);
         }
+      }
 
-        // Update temporal tracking memory with smoothing
-        if (left) {
-          const curC = getPalmCentroid(left);
-          lastLeftCentroidRef.current = lastLeft
-            ? { x: 0.75 * curC.x + 0.25 * lastLeft.x, y: 0.75 * curC.y + 0.25 * lastLeft.y }
-            : curC;
-          framesSinceLeftSeenRef.current = 0;
-        } else {
-          framesSinceLeftSeenRef.current++;
-        }
-
-        if (right) {
-          const curC = getPalmCentroid(right);
-          lastRightCentroidRef.current = lastRight
-            ? { x: 0.75 * curC.x + 0.25 * lastRight.x, y: 0.75 * curC.y + 0.25 * lastRight.y }
-            : curC;
-          framesSinceRightSeenRef.current = 0;
-        } else {
-          framesSinceRightSeenRef.current++;
-        }
-
-        // Strict Single-Hand Palm Pause Rule:
-        // Palm pause must ONLY work if a single hand is shown. If 2 hands are present, it must NOT work.
-        const isSingleHand = (left !== null && right === null) || (left === null && right !== null);
-        const palmDetected = isSingleHand && (isHandOpenPalm(left) || isHandOpenPalm(right));
-
-        const nextLandmarks: HandLandmarks = { left, right };
-        if (onFrameRef.current) {
-          // Zero-latency direct callback path (avoids 30fps React state + effect hop)
-          onFrameRef.current(nextLandmarks, palmDetected);
-        } else {
-          setLandmarks(nextLandmarks);
-          setIsOpenPalm(palmDetected);
-        }
-      });
-
-      handsRef.current = hands;
-      setIsReady(true);
-    } catch (err) {
-      console.error('Failed to initialize MediaPipe Hands:', err);
-      setCameraError('Failed to load MediaPipe Hands model.');
-    }
+    });
 
     return () => {
+      cancelled = true;
+      cameraGenerationRef.current++;
+      startPromiseRef.current = null;
       isMountedRef.current = false;
-      if (handsRef.current) {
-        handsRef.current.close().catch(() => {});
-        handsRef.current = null;
-      }
+      canProcessRef.current = false;
+      if (handsRef.current === model) handsRef.current = null;
+      if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+      animFrameIdRef.current = null;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      // Closing while WASM is still compiling can leave its run dependencies hanging.
+      void initialization.then(() => model?.close()).catch(() => {});
     };
   }, []);
 
@@ -354,7 +388,7 @@ export function useMediaPipeHands(
 
     const now = performance.now();
     // Pace to max ~32fps (31ms) to eliminate redundant frames and CPU saturation on 60/120Hz monitors
-    if (now - lastProcessTimeRef.current >= 31 && video && hands && video.readyState >= 2 && !isProcessingRef.current) {
+    if (now - lastProcessTimeRef.current >= 31 && canProcessRef.current && video && hands && video.readyState >= 2 && !isProcessingRef.current) {
       lastProcessTimeRef.current = now;
       isProcessingRef.current = true;
       try {
@@ -391,7 +425,17 @@ export function useMediaPipeHands(
     }
   }); // A responsive layout switch can replace the video element without changing cameraActive.
 
-  const startCamera = useCallback(async (): Promise<boolean> => {
+  // Mobile setup and in-game previews are different DOM elements.
+  const bindVideo = useCallback((video: HTMLVideoElement | null) => {
+    videoRef.current = video;
+    if (video && streamRef.current) {
+      video.srcObject = streamRef.current;
+      void video.play().catch(() => {});
+    }
+  }, []);
+
+  const requestCamera = useCallback(async (): Promise<boolean> => {
+    const generation = cameraGenerationRef.current;
     if (streamRef.current) {
       setCameraActive(true);
       await attachStreamToVideo();
@@ -401,8 +445,12 @@ export function useMediaPipeHands(
       return true;
     }
 
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Camera access requires HTTPS or localhost. You can also use Touch or Keyboard controls.');
+      return false;
+    }
     try {
-      setCameraError(null);
+      setCameraError(modelErrorRef.current);
       // Optimized 640x360 stream: cuts CPU/memory bandwidth by 75% while keeping 100% MediaPipe accuracy
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -414,14 +462,24 @@ export function useMediaPipeHands(
         },
       });
 
-      if (!isMountedRef.current) {
+      if (!isMountedRef.current || generation !== cameraGenerationRef.current) {
         stream.getTracks().forEach((track) => track.stop());
         return false;
       }
 
       streamRef.current = stream;
+      for (const track of stream.getVideoTracks()) {
+        track.onended = () => {
+          if (streamRef.current !== stream) return;
+          if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+          animFrameIdRef.current = null;
+          streamRef.current = null;
+          setCameraActive(false);
+          setCameraError('Camera disconnected. Enable it again or choose another control mode.');
+        };
+      }
       setCameraActive(true);
-      setCameraError(null);
+      setCameraError(modelErrorRef.current);
       await attachStreamToVideo();
 
       // Start processing frames
@@ -430,6 +488,7 @@ export function useMediaPipeHands(
       }
       return true;
     } catch (err: unknown) {
+      if (!isMountedRef.current || generation !== cameraGenerationRef.current) return false;
       console.error('Error accessing webcam:', err);
       let message = 'Webcam access denied or unavailable.';
       if (err instanceof Error) {
@@ -449,7 +508,19 @@ export function useMediaPipeHands(
     }
   }, [attachStreamToVideo, processFrame]);
 
+  const startCamera = useCallback((): Promise<boolean> => {
+    if (!startPromiseRef.current) {
+      const pending = requestCamera().finally(() => {
+        if (startPromiseRef.current === pending) startPromiseRef.current = null;
+      });
+      startPromiseRef.current = pending;
+    }
+    return startPromiseRef.current;
+  }, [requestCamera]);
+
   const stopCamera = useCallback(() => {
+    cameraGenerationRef.current++;
+    startPromiseRef.current = null;
     if (animFrameIdRef.current) {
       cancelAnimationFrame(animFrameIdRef.current);
       animFrameIdRef.current = null;
@@ -469,6 +540,7 @@ export function useMediaPipeHands(
 
   return {
     videoRef,
+    bindVideo,
     landmarks,
     isOpenPalm,
     isReady,

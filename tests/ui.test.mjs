@@ -18,7 +18,9 @@ function load(path, replacements = {}) {
 }
 const { Webcam } = load('../src/components/Webcam.tsx');
 const { LandscapeCockpit } = load('../src/components/LandscapeCockpit.tsx', { './Webcam': { Webcam } });
-const { GameCanvas } = load('../src/game/GameCanvas.tsx', { './soundEffects': { soundEffects: {} } });
+const viewport = load('../src/game/viewport.ts');
+const touchSteering = load('../src/input/touchSteering.ts');
+const { GameCanvas } = load('../src/game/GameCanvas.tsx', { './soundEffects': { soundEffects: {} }, './viewport': viewport, '../input/touchSteering': touchSteering });
 const engine = { state: 'CALIBRATING', stats: {}, ball: { x: 350 }, bar: { angleRad: 0 }, floorGap: 380 };
 const props = { engine, tiltAngleRad: 0, isCalibrated: false, onStartGame() {}, onSkipCalibrationAndStart() {}, onRestart() {}, onTogglePause() {} };
 
@@ -52,4 +54,93 @@ test('pregame sidebar retains the tilt instrument and hides score and pause', ()
   }));
   assert.match(html, /TILT-O-METER/);
   assert.doesNotMatch(html, /Pause game|HI-SCORE|flight-stats/);
+});
+
+for (const [width, height] of [[320, 520], [390, 640], [430, 720], [844, 280], [667, 210]]) {
+  test(`mobile viewport fills ${width}x${height} with proportional world coordinates`, () => {
+    const view = viewport.mobileViewport(width, height);
+    assert.ok(Math.abs(view.width / view.height - width / height) < 0.01);
+    assert.ok(view.width >= 780);
+    assert.ok(view.height >= 420);
+    const barY = viewport.barScreenY(view.height, true);
+    // At maximum 25 degree tilt, both ends of the 700px bar remain visible.
+    const halfVerticalSpan = 350 * Math.sin(25 * Math.PI / 180);
+    assert.ok(barY - halfVerticalSpan > 0);
+    assert.ok(barY + halfVerticalSpan < view.height - 68);
+    assert.equal(view.height - 68 - barY, 163);
+  });
+}
+
+test('desktop viewport keeps its original camera position', () => {
+  assert.equal(viewport.barScreenY(660, false), 429);
+});
+
+test('mobile game exposes its telemetry and touch buttons during a run', () => {
+  const html = renderToStaticMarkup(React.createElement(GameCanvas, {
+    ...props, engine: { ...engine, state: 'PLAYING', stats: { sectorLevel: 1, altitudeMeters: 12, portalsUsed: 2, sectorProgress: 0.4 } },
+    isMobile: true, controlMode: 'TOUCH', onTouchTilt() {},
+  }));
+  assert.match(html, /aria-label="Flight status"/);
+  assert.match(html, /aria-label="Pause game"/);
+  assert.match(html, /aria-label="Tilt left"/);
+  assert.match(html, /aria-label="Tilt right"/);
+});
+
+test('overlapping thumbs preserve the remaining direction when one is released', () => {
+  const touch = new touchSteering.TouchSteering();
+  assert.equal(touch.press(1, -1), -1);
+  assert.equal(touch.press(2, 1), 1);
+  assert.equal(touch.release(2), -1);
+  assert.equal(touch.release(2), -1);
+  assert.equal(touch.release(1), 0);
+});
+
+test('focus loss clears all held touch pointers', () => {
+  const touch = new touchSteering.TouchSteering();
+  touch.press(1, -1);
+  touch.clear();
+  assert.equal(touch.release(1), 0);
+});
+
+test('mobile camera setup teaches one-hand tilt with an inline preview', () => {
+  const html = renderToStaticMarkup(React.createElement(GameCanvas, { ...props, isMobile: true, controlMode: 'HAND_CAM' }));
+  assert.match(html, /TILT ONE HAND/);
+  assert.match(html, /mobile-setup-preview/);
+  assert.match(html, /Show your other palm/);
+  assert.doesNotMatch(html, /Show one open palm to pause|Raise your hands|CATCH WARPS/);
+});
+
+test('tracking-loss pause requests a visible hand before resuming', () => {
+  const html = renderToStaticMarkup(React.createElement(GameCanvas, {
+    ...props, engine: { ...engine, state: 'PAUSED' }, isMobile: true, controlMode: 'HAND_CAM', trackingLostPause: true,
+  }));
+  assert.match(html, /HAND TRACKING LOST/);
+  assert.match(html, /Show your hand, then tap Resume/);
+  assert.doesNotMatch(html, /Hold single palm/);
+});
+
+test('mobile help describes one palm and button pause', () => {
+  const { HowToPlayModal } = load('../src/components/HowToPlayModal.tsx');
+  const html = renderToStaticMarkup(React.createElement(HowToPlayModal, { isOpen: true, isMobile: true, debugState: {}, onClose() {} }));
+  assert.match(html, /Lean your hand left or right/);
+  assert.match(html, /Tap Pause/);
+  assert.doesNotMatch(html, /hold both hands|DUAL HANDS/);
+});
+
+test('mobile camera distinguishes tracker loading from waiting for a hand', () => {
+  const html = renderToStaticMarkup(React.createElement(GameCanvas, {
+    ...props, isMobile: true, controlMode: 'HAND_CAM', cameraActive: true, handTrackingReady: false,
+  }));
+  assert.match(html, /LOADING TRACKER/);
+  assert.match(html, /Loading hand tracking/);
+  assert.doesNotMatch(html, /Show one upright palm/);
+});
+
+
+test('high score retains warp bonuses from an earlier run', () => {
+  const html = renderToStaticMarkup(React.createElement(LandscapeCockpit, {
+    engine: { ...engine, state: 'GAME_OVER', stats: { altitudeMeters: 0, portalsUsed: 0, bestAltitudeMeters: 7, bestScore: 120 } },
+    state: {}, controlMode: 'KEYBOARD', isKeyboardSteering: false,
+  }));
+  assert.match(html, /000120/);
 });

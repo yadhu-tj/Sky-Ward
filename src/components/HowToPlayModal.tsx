@@ -3,6 +3,7 @@ import type { TiltDebugState } from '../input/tiltController';
 
 interface HowToPlayModalProps {
   isOpen: boolean;
+  isMobile?: boolean;
   onClose: () => void;
   onStartGame: () => void;
   onQuickPlay: () => void;
@@ -12,6 +13,7 @@ interface HowToPlayModalProps {
 
 export const HowToPlayModal: React.FC<HowToPlayModalProps> = React.memo(function HowToPlayModal({
   isOpen,
+  isMobile = false,
   onClose,
   onStartGame,
   onQuickPlay,
@@ -19,6 +21,20 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = React.memo(function
   isKeyboardSteering,
 }) {
   if (!isOpen) return null;
+  if (isMobile) return (
+    <div className="mobile-help-backdrop">
+      <section className="mobile-help-dialog" role="dialog" aria-modal="true" aria-labelledby="mobile-help-title">
+        <div className="panel-heading"><h2 id="mobile-help-title">★ HOW TO PLAY ★</h2><button className="text-action" onClick={onClose} aria-label="Close help">Close</button></div>
+        <h3>One hand. Full control.</h3>
+        <p>Hold your phone in one hand or prop it up. Show your other palm to the camera and hold it still for a moment to calibrate.</p>
+        <div className="mobile-help-rule"><span>🖐️</span><p><strong>Lean your hand left or right.</strong> The bar follows your hand’s tilt. Moving your hand up or down won’t steer it.</p></div>
+        <div className="mobile-help-rule"><span>⚖️</span><p><strong>Keep the ball on the bar.</strong> Dodge red holes and catch star warps to climb +7m ahead of the lava.</p></div>
+        <div className="mobile-help-rule"><span>Ⅱ</span><p><strong>Tap Pause to take a break.</strong> If hand tracking is lost, the bar levels out and the game pauses. Show your hand and tap Resume to continue.</p></div>
+        <p className="panel-description">You can also choose Touch or Phone Tilt before playing, or change controls in Settings.</p>
+        <button className="btn-start" onClick={onClose}>GOT IT</button>
+      </section>
+    </div>
+  );
 
   const { isHandTrackingActive, hasBothHands, finalAngleDeg, leftHand, rightHand } = debugState;
   const isNeutral = Math.abs(finalAngleDeg) < 1.0;

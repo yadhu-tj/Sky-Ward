@@ -26,6 +26,7 @@ export interface BallLavaFall {
 export interface GameStats {
   altitudeMeters: number;
   bestAltitudeMeters: number;
+  bestScore: number;
   deathReason: DeathReason;
   portalsUsed: number;
   timeElapsed: number;
@@ -88,6 +89,7 @@ export class GameEngine {
   public altitudePx: number = 0;
   public floorAltitudePx: number = 0;
   public bestAltitudePx: number = 0;
+  public bestScore: number = 0;
 
   public portalsUsed: number = 0;
   public timeElapsed: number = 0;
@@ -157,6 +159,7 @@ export class GameEngine {
     this.portalWarpAnimation = 0;
     this.shieldTimer = 0;
     this.currentSectorIndex = 0;
+    this.highestSectorReached = 1;
     this.promotionBannerTimer = 0;
     this.promotedSectorName = '';
     this.graceHoles.clear();
@@ -174,7 +177,8 @@ export class GameEngine {
       this.changeState('PLAYING');
     } else {
       this.changeState('COUNTDOWN');
-      this.countdownTimer = 2.4; // 2.4s punchy countdown
+      this.countdownTimer = 3; // One full second each for 3, 2, and 1.
+      soundEffects.playCountdownBeep(false);
     }
   }
 
@@ -203,6 +207,18 @@ export class GameEngine {
   }
 
   public update(dt: number): void {
+    if (!Number.isFinite(dt) || dt < 0) return;
+    // A slow render frame must not let a fast ball jump entirely across a hole.
+    if (this.state !== 'PLAYING' || dt <= 1 / 120) { this.advance(dt); return; }
+    const steps = Math.ceil(dt * 120);
+    const step = dt / steps;
+    for (let i = 0; i < steps; i++) {
+      this.advance(step);
+      if (this.state !== 'PLAYING') break;
+    }
+  }
+
+  private advance(dt: number): void {
     // Smooth mechanical angular interpolation runs continuously so bar reflects hand tilt
     const angleDiff = this.bar.targetAngleRad - this.bar.angleRad;
     const tiltLerpSpeed = 15; // Smooth mechanical responsiveness
@@ -303,6 +319,8 @@ export class GameEngine {
       if (this.altitudePx > this.bestAltitudePx) {
         this.bestAltitudePx = this.altitudePx;
       }
+
+      this.updateBestScore();
 
       // 2. Rising floor progression
       const floorSpeed =
@@ -516,15 +534,29 @@ export class GameEngine {
 
     // Guarantee a generous safe landing zone without holes
     this.generator.addSafeZone(targetAltitude, 180);
+    // Rows ahead are already buffered, so the safe zone must clear those as well.
+    for (const row of this.rows) {
+      if (Math.abs(row.worldY - targetAltitude) <= 180) {
+        row.slots = [];
+        row.isSafeZone = true;
+      }
+    }
 
     this.altitudePx = targetAltitude;
     this.bar.worldY = this.altitudePx;
     this.portalsUsed++;
+    this.bestAltitudePx = Math.max(this.bestAltitudePx, targetAltitude);
+    this.updateBestScore();
     this.portalWarpAnimation = 0.7; // Visual flash burst
     this.shieldTimer = 3.5; // Generous 3.5s shield after warp!
 
     // Reset ball velocity for stable re-entry
     this.ball.velocity = 0;
+  }
+
+  private updateBestScore(): void {
+    const score = Math.floor(this.altitudePx / this.config.pixelsPerMeter) * 10 + this.portalsUsed * 50;
+    this.bestScore = Math.max(this.bestScore, score);
   }
 
   public get stats(): GameStats {
@@ -543,6 +575,7 @@ export class GameEngine {
     return {
       altitudeMeters,
       bestAltitudeMeters: Math.floor(this.bestAltitudePx / this.config.pixelsPerMeter),
+      bestScore: this.bestScore,
       deathReason: this.deathReason,
       portalsUsed: this.portalsUsed,
       timeElapsed: Math.floor(this.timeElapsed),

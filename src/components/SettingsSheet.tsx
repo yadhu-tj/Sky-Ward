@@ -17,6 +17,7 @@ interface SettingsSheetProps {
   onOpenHowToPlay: () => void;
   gyroAvailable?: boolean;
   isMobile?: boolean;
+  onPrepareGyro?: () => Promise<boolean>;
 }
 
 export const SettingsSheet: React.FC<SettingsSheetProps> = ({
@@ -35,10 +36,13 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
   onOpenHowToPlay,
   gyroAvailable = true,
   isMobile = false,
+  onPrepareGyro,
 }) => {
   const sheetRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [zeroedToast, setZeroedToast] = useState(false);
+  const [isCheckingMotion, setIsCheckingMotion] = useState(false);
+  const [motionNotice, setMotionNotice] = useState('');
 
   // Detect iOS Safari where requestFullscreen is not supported on documentElement
   const isIOS =
@@ -54,8 +58,13 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
     closeButtonRef.current?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
+      if (e.key === 'Escape') { onClose(); }
+      if (e.key === 'Tab') {
+        const elements = sheetRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input, select, textarea, [tabindex="0"]');
+        if (!elements?.length) return;
+        const first = elements[0], last = elements[elements.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     };
 
@@ -74,9 +83,9 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen?.().catch(() => {});
     } else {
-      document.exitFullscreen().catch(() => {});
+      document.exitFullscreen?.().catch(() => {});
     }
   };
 
@@ -230,7 +239,7 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
                     : 'Gyro sensor not detected'
                   : controlMode === 'TOUCH'
                   ? 'Tap left/right screen sides'
-                  : 'Hold hands in front camera'}
+                  : controlMode === 'KEYBOARD' ? 'Arrow keys or A / D to steer' : 'Hold hands in front camera'}
               </span>
             </div>
             <div
@@ -250,11 +259,23 @@ export const SettingsSheet: React.FC<SettingsSheetProps> = ({
               ] : [
                 { mode: 'KEYBOARD' as const, label: 'Keyboard' },
                 { mode: 'HAND_CAM' as const, label: 'Camera' },
-              ]).map(({ mode, label }) => <button key={mode} onClick={() => onSelectControlMode(mode)}
-                disabled={mode === 'GYRO' && !gyroAvailable} aria-pressed={controlMode === mode}
+              ]).map(({ mode, label }) => <button key={mode} onClick={async () => {
+                setMotionNotice('');
+                if (mode === 'GYRO' && onPrepareGyro) {
+                  setIsCheckingMotion(true);
+                  let ready = false;
+                  try { ready = await onPrepareGyro(); } catch { ready = false; }
+                  finally { setIsCheckingMotion(false); }
+                  if (!ready) { onSelectControlMode('TOUCH'); setMotionNotice('Phone tilt unavailable. Touch controls selected.'); return; }
+                }
+                onSelectControlMode(mode);
+              }}
+                disabled={isCheckingMotion || (mode === 'GYRO' && !gyroAvailable)} aria-pressed={controlMode === mode}
                 className={`mode-pill ${controlMode === mode ? 'active' : ''}`}>{label}</button>)}
             </div>
           </div>
+
+          {(isCheckingMotion || motionNotice) && <p className="mobile-input-notice" role="status">{isCheckingMotion ? 'Checking phone tilt…' : motionNotice}</p>}
 
           {/* Row 4: Camera row (Only when in Cam mode) */}
           {controlMode === 'HAND_CAM' && (

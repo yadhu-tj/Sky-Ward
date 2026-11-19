@@ -228,3 +228,93 @@ body { background: radial-gradient(circle at 40% 15%, #2b104740, transparent 60%
 .flight-stats .score-grid > div:first-child dt { margin-bottom: 0; color: #ffe600; }
 .flight-stats .score-grid dd { font-size: 14px; }
 .flight-stats .score-grid > div:first-child dd { font-size: 24px; letter-spacing: 1px; }
+
+/* The phone cabinet reserves space for its HUD and controls around the playfield. */
+.game-viewport { display: contents; }
+.mobile-input-notice { color: #ffe184; font-size: 14px; line-height: 1.5; }
+@media (max-width: 600px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .game-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; align-items: stretch; justify-content: stretch; }
+  .game-viewport { display: block; grid-row: 2; min-height: 0; min-width: 0; overflow: hidden; }
+  .game-viewport canvas { width: 100%; height: 100%; object-fit: fill; }
+  .mobile-play-hud { grid-row: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto 44px; align-items: center; gap: 12px; padding: 8px 12px; background: #110724; border-bottom: 1px solid #58228b; }
+  .mobile-play-hud span { display: block; font-size: 10px; color: #b6a2ca; margin-bottom: 4px; }
+  .mobile-play-hud strong { font: 11px 'Press Start 2P', monospace; color: #fff; }
+  .mobile-stage > span { color: #00f3ff; }
+  .mobile-stage progress { margin-top: 6px; height: 3px; }
+  .mobile-score strong { color: #ffe600; }
+  .mobile-warps strong { color: #ff70bf; }
+  .mobile-pause { width: 44px; height: 44px; border: 1px solid #f472b6; border-radius: 8px; color: #fff; background: linear-gradient(#ec4899, #be185d); font-size: 22px; box-shadow: 0 2px 0 #831843; }
+  .mobile-touch-controls { grid-row: 3; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 10px 12px; background: #110724; border-top: 1px solid #58228b; }
+  .mobile-touch-controls button { min-height: 52px; border-radius: 10px; border: 1px solid #38bdf8; background: linear-gradient(#0284c7, #075985); color: white; font: 11px 'Press Start 2P', monospace; touch-action: none; user-select: none; -webkit-user-select: none; box-shadow: 0 3px 0 #082f49; }
+  .mobile-touch-controls button:last-child { border-color: #f472b6; background: linear-gradient(#be185d, #831843); box-shadow: 0 3px 0 #500724; }
+  .mobile-touch-controls button:active { filter: brightness(1.3); transform: translateY(2px); box-shadow: none; }
+  .game-state-overlay { overflow-y: auto; justify-content: flex-start !important; gap: 14px !important; padding: 20px 16px !important; }
+  .game-state-overlay > :first-child { margin-top: auto; }
+  .game-state-overlay > :last-child { margin-bottom: auto; }
+  .game-state-overlay > * { flex-shrink: 0; max-width: 100%; }
+  .game-state-overlay h2 { font-size: clamp(20px, 6vw, 28px) !important; }
+  .game-state-overlay button { min-height: 48px; }
+  .game-state-overlay kbd { font-size: 12px; }
+  .start-title { overflow-wrap: anywhere; }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .is-playing .arcade-header { display: none; }
+  .mobile-play-hud { padding: 4px 12px; }
+  .mobile-touch-controls { padding: 6px 12px; }
+  .mobile-touch-controls button { min-height: 44px; }
+}
+@media (max-width: 359px) {
+  .mobile-play-hud { gap: 8px; padding-inline: 8px; }
+  .mobile-warps { display: none; }
+  .mobile-play-hud { grid-template-columns: minmax(0, 1fr) auto 44px; }
+  .brand-title { font-size: 9px; }
+  .header-actions { gap: 4px; }
+  .header-btn { padding-inline: 6px; }
+}
+
+/* Mobile onboarding keeps the arcade character in a compact, purposeful cabinet. */
+@media (max-width: 600px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .start-overlay { padding: 22px 18px; background: linear-gradient(155deg, #160829f2, #070210ee); }
+  .start-inner { margin: 0 auto; align-self: flex-start; max-width: 440px; gap: 16px; }
+  .start-eyebrow { font-size: 9px; color: #b69acb; letter-spacing: 2px; }
+  .start-title { font-size: clamp(21px, 5.8vw, 27px); letter-spacing: 1px; text-shadow: 0 0 10px #00f3ff60, 0 0 20px #ff007f70; }
+  .start-objective { color: #d1c2e0; font-size: 16px; line-height: 1.4; }
+  .control-picker { margin-top: 4px; }
+  .control-picker legend { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .start-mode-tabs { padding: 4px; gap: 4px; border-radius: 10px; }
+  .start-mode-tab { font-size: 13px; min-height: 46px; gap: 6px; }
+  .mobile-control-guide { width: 100%; border: 1px solid #6b329d; border-radius: 13px; padding: 14px; background: linear-gradient(145deg, #201039, #110720); box-shadow: inset 0 1px 0 #ffffff0a; text-align: left; }
+  .mobile-guide-heading { display: flex; align-items: flex-start; gap: 12px; }
+  .mobile-guide-heading > span { font-size: 30px; flex: 0 0 34px; }
+  .mobile-guide-heading h2 { color: #00f3ff; font: 10px/1.6 'Press Start 2P', monospace; margin-bottom: 6px; }
+  .mobile-guide-heading p { font-size: 14px; color: #bdadcf; line-height: 1.55; }
+  .mobile-setup-preview { position: relative; width: 100%; height: clamp(130px, 19dvh, 170px); margin-top: 14px; border: 1px solid #77539a; border-radius: 9px; overflow: hidden; background: radial-gradient(ellipse at center, #342047, #090410); }
+  .mobile-setup-preview video, .mobile-flight-preview video { display: block; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .mobile-preview-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; color: #bea3d4; font-size: 13px; }
+  .mobile-preview-placeholder > span { font-size: 40px; opacity: .7; }
+  .mobile-palm-frame { position: absolute; top: 12%; bottom: 18%; left: 32%; right: 32%; border: 1px dashed #00f3ff90; border-radius: 20px 20px 10px 10px; pointer-events: none; }
+  .mobile-preview-label { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); color: #a2f5cc; background: #070312b3; padding: 5px 8px; border-radius: 4px; font: 8px 'Press Start 2P', monospace; white-space: nowrap; }
+  .mobile-hand-readiness { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; }
+  .mobile-hand-readiness p { color: #b8dcc5; font-size: 13px; line-height: 1.5; }
+  .mobile-hand-readiness .text-action { flex-shrink: 0; min-height: 32px; }
+  .mobile-mission-strip { display: flex; justify-content: center; gap: 14px; color: #a994bd; font-size: 12px; line-height: 1.5; flex-wrap: wrap; }
+  .btn-start { min-height: 54px; font-size: 12px; border-radius: 9px; }
+  .btn-start:disabled { opacity: .7; color: #b8a7c6; background: #342047; border-color: #674389; box-shadow: 0 3px 0 #20112f; }
+  .start-tip { font-size: 12px; line-height: 1.5; max-width: 300px; color: #9e8bae; }
+  .mobile-flight-preview { position: absolute; top: 78px; right: 12px; z-index: 18; width: 72px; height: 50px; border: 1px solid #8a5cbe; border-radius: 8px; overflow: hidden; box-shadow: 0 0 12px #a855f730; pointer-events: none; }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .start-inner { max-width: 640px; display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 12px 22px; }
+  .start-eyebrow, .start-title, .start-objective, .control-picker, .btn-start, .start-tip, .mobile-input-notice { grid-column: 1; }
+  .mobile-control-guide { grid-column: 2; grid-row: 1 / span 7; }
+  .mobile-mission-strip { grid-column: 1; gap: 8px; }
+  .mobile-setup-preview { height: 140px; }
+  .mobile-flight-preview { top: 66px; width: 64px; height: 44px; }
+}
+.mobile-help-backdrop { position: fixed; inset: 0; z-index: 100; padding: 16px; display: flex; align-items: center; justify-content: center; background: #070312e8; backdrop-filter: blur(8px); }
+.mobile-help-dialog { width: 100%; max-width: 440px; max-height: 90dvh; overflow-y: auto; padding: 22px; border: 2px solid #6d28d9; border-radius: 16px; color: #cfbfdf; background: linear-gradient(#1b0b34, #0d041c); box-shadow: 0 0 30px #8b5cf630; font-size: 15px; line-height: 1.6; }
+.mobile-help-dialog h3 { color: white; font-size: 22px; margin: 18px 0 12px; }
+.mobile-help-rule { display: flex; gap: 12px; margin: 18px 0; }
+.mobile-help-rule > span { flex: 0 0 30px; color: #00f3ff; font-size: 24px; }
+.mobile-help-rule strong { display: block; color: #f3e8ff; }
+.mobile-help-dialog .btn-start { margin-top: 22px; }
